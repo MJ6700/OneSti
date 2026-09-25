@@ -6,4 +6,7 @@
     <string name="network_settings">Network Settings</string>
     <string name="view_cached_portal">View Cached Content</string>
     <string name="offline_banner">Offline Mode • Displaying cached content</string>
+    <string name="portal_info_title">About ONE STI</string>
+    <string name="portal_shortcuts_title">Quick Access</string>
+    <string name="back_to_portal">Back to Portal</string>
 </resources>

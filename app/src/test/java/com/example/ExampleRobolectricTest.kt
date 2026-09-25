@@ -34,4 +34,31 @@ class ExampleRobolectricTest {
     assertEquals("View Cached Content", viewCached)
     assertEquals("Offline Mode • Displaying cached content", offlineBanner)
   }
+
+  @Test
+  fun `verify session manager remembers valid portal url and ignores logout url`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val defaultUrl = "https://one.sti.edu/"
+
+    // Initially defaults to defaultUrl
+    assertEquals(defaultUrl, SessionManager.getLastValidUrl(context, defaultUrl))
+
+    // Saves valid portal URL
+    val portalGradesUrl = "https://one.sti.edu/student/grades"
+    SessionManager.saveLastValidUrl(context, portalGradesUrl)
+    assertEquals(portalGradesUrl, SessionManager.getLastValidUrl(context, defaultUrl))
+
+    // When logout URL is encountered, resets saved portal page to avoid loop
+    val logoutUrl = "https://one.sti.edu/account/logout"
+    SessionManager.saveLastValidUrl(context, logoutUrl)
+    assertEquals(defaultUrl, SessionManager.getLastValidUrl(context, defaultUrl))
+  }
+
+  @Test
+  fun `verify session persistence js is valid and contains storage synchronization`() {
+    val js = SessionManager.SESSION_PERSISTENCE_JS
+    assert(js.contains("__sti_persisted_session_"))
+    assert(js.contains("sessionStorage"))
+    assert(js.contains("localStorage"))
+  }
 }

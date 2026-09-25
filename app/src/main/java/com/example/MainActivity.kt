@@ -37,6 +37,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
@@ -171,12 +174,34 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    SessionManager.initCookieManager(this)
     enableEdgeToEdge()
     setContent {
       MyApplicationTheme {
         OneStiApp(onWebViewBound = { activeWebView = it })
       }
     }
+  }
+
+  override fun onPause() {
+    super.onPause()
+    activeWebView?.let { wv ->
+      SessionManager.persistSession(this, wv.url)
+    }
+  }
+
+  override fun onStop() {
+    super.onStop()
+    activeWebView?.let { wv ->
+      SessionManager.persistSession(this, wv.url)
+    }
+  }
+
+  override fun onDestroy() {
+    activeWebView?.let { wv ->
+      SessionManager.persistSession(this, wv.url)
+    }
+    super.onDestroy()
   }
 
   override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -256,6 +281,7 @@ fun OneStiApp(
       else -> {
         val now = System.currentTimeMillis()
         if (now - backPressedTime < 2000L) {
+          SessionManager.persistSession(context, wv?.url)
           (context as? Activity)?.finish()
         } else {
           backPressedTime = now
@@ -264,6 +290,14 @@ fun OneStiApp(
       }
     }
   }
+
+  val initialUrl = remember { SessionManager.getLastValidUrl(context, ONE_STI_URL) }
+
+  val animatedProgress by animateFloatAsState(
+    targetValue = if (isLoading) loadProgress.coerceIn(0.08f, 1f) else 1f,
+    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+    label = "load_progress_anim"
+  )
 
   Scaffold(
     contentWindowInsets = WindowInsets.safeDrawing
@@ -274,7 +308,7 @@ fun OneStiApp(
         .padding(innerPadding)
     ) {
       OneStiWebViewContainer(
-        url = ONE_STI_URL,
+        url = initialUrl,
         isRefreshing = isPullRefreshing,
         isOnline = isOnline,
         onRefresh = {
@@ -327,12 +361,12 @@ fun OneStiApp(
       // Thin loading indicator at the very top of the page
       AnimatedVisibility(
         visible = isLoading && !hasError,
-        enter = fadeIn(),
-        exit = fadeOut(),
+        enter = fadeIn(animationSpec = tween(150)),
+        exit = fadeOut(animationSpec = tween(250)),
         modifier = Modifier.align(Alignment.TopCenter)
       ) {
         LinearProgressIndicator(
-          progress = { if (loadProgress > 0f) loadProgress else 0.1f },
+          progress = { animatedProgress },
           modifier = Modifier
             .fillMaxWidth()
             .height(3.dp),
@@ -606,6 +640,7 @@ fun OneStiWebViewContainer(
 
   DisposableEffect(Unit) {
     onDispose {
+      SessionManager.persistSession(context, null)
       CookieManager.getInstance().flush()
     }
   }
@@ -619,16 +654,21 @@ fun OneStiWebViewContainer(
           ViewGroup.LayoutParams.MATCH_PARENT
         )
 
-        // Setup CookieManager for session and single sign-on persistence
+        // Setup CookieManager and restore saved session state
+        SessionManager.initCookieManager(ctx, this)
         val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(this, true)
 
-        // WebSettings optimizations for student portal
+        // Enable smooth scrolling and eliminate overscroll jitter
+        isVerticalScrollBarEnabled = false
+        isHorizontalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+
+        // WebSettings optimizations for fluid student portal browsing
         settings.apply {
           javaScriptEnabled = true
           domStorageEnabled = true
           databaseEnabled = true
+          saveFormData = true
           cacheMode = if (isOnline) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_CACHE_ELSE_NETWORK
           allowFileAccess = false
           allowContentAccess = true
@@ -639,11 +679,16 @@ fun OneStiWebViewContainer(
           loadWithOverviewMode = true
           mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
 
+          // Optimize layout and rendering pipeline for high frame-rate responsiveness
+          mediaPlaybackRequiresUserGesture = false
+          offscreenPreRaster = true
+
           // Optimize user agent string so Google/Microsoft OAuth does not reject with disallowed_useragent
+          // and treats the session as a persistent browser rather than a transient in-app webview
           val defaultUa = userAgentString
-          if (defaultUa.contains("; wv")) {
-            userAgentString = defaultUa.replace("; wv", "")
-          }
+          userAgentString = defaultUa
+            .replace("; wv", "")
+            .replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
         }
 
         // WebChromeClient for progress, title, and file upload support
@@ -678,6 +723,10 @@ fun OneStiWebViewContainer(
             onLoadingChanged(true)
             onCanGoBackChanged(view?.canGoBack() == true)
             onCanGoForwardChanged(view?.canGoForward() == true)
+
+            // Inject persistent storage sync and persist cookies
+            view?.evaluateJavascript(SessionManager.SESSION_PERSISTENCE_JS, null)
+            SessionManager.saveLastValidUrl(ctx, url)
           }
 
           override fun onPageFinished(view: WebView?, url: String?) {
@@ -685,13 +734,18 @@ fun OneStiWebViewContainer(
             onLoadingChanged(false)
             onCanGoBackChanged(view?.canGoBack() == true)
             onCanGoForwardChanged(view?.canGoForward() == true)
-            cookieManager.flush()
+
+            // Ensure tokens in sessionStorage are mirrored to localStorage and cookies flushed
+            view?.evaluateJavascript(SessionManager.SESSION_PERSISTENCE_JS, null)
+            SessionManager.persistSession(ctx, url)
+            SessionManager.saveLastValidUrl(ctx, url)
           }
 
           override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
             super.doUpdateVisitedHistory(view, url, isReload)
             onCanGoBackChanged(view?.canGoBack() == true)
             onCanGoForwardChanged(view?.canGoForward() == true)
+            SessionManager.saveLastValidUrl(ctx, url)
           }
 
           override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
