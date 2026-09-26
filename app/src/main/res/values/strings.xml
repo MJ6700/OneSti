@@ -1,12 +1,12 @@
 <resources>
-    <string name="app_name">ONE STI</string>
+    <string name="app_name">One STI</string>
     <string name="no_internet_title">No Internet Connection</string>
-    <string name="no_internet_desc">Unable to reach the ONE STI Student Portal. Please check your Wi-Fi or mobile data connection and try again.</string>
+    <string name="no_internet_desc">Unable to reach the One STI Student Portal. Please check your Wi-Fi or mobile data connection and try again.</string>
     <string name="retry_connection">Retry Connection</string>
     <string name="network_settings">Network Settings</string>
     <string name="view_cached_portal">View Cached Content</string>
     <string name="offline_banner">Offline Mode • Displaying cached content</string>
-    <string name="portal_info_title">About ONE STI</string>
+    <string name="portal_info_title">About One STI</string>
     <string name="portal_shortcuts_title">Quick Access</string>
     <string name="back_to_portal">Back to Portal</string>
 </resources>

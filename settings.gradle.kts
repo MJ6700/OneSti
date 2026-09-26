@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "ONE STI"
+rootProject.name = "One STI"
 
 include(":app")

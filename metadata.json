@@ -1,6 +1,6 @@
 {
-  "name": "ONE STI",
-  "description": "The ONE STI Student Portal app for STI College students and faculty.",
+  "name": "One STI",
+  "description": "The One STI Student Portal app for STI College students and faculty.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

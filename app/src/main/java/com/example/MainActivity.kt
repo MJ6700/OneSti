@@ -62,6 +62,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
@@ -71,7 +72,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -83,7 +83,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.example.navigation.AppDestinations
+import com.example.navigation.NavigationTransitions
+import com.example.ui.screens.AboutScreen
+import com.example.ui.screens.ShortcutsScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -113,6 +119,19 @@ import com.example.ui.theme.StiBlue
 import com.example.ui.theme.StiYellow
 
 private const val ONE_STI_URL = "https://one.sti.edu/"
+
+private const val SMOOTH_SCROLL_JS = """
+  (function() {
+    if (window.__sti_smooth_applied) return;
+    window.__sti_smooth_applied = true;
+    try {
+      var s = document.createElement('style');
+      s.id = '__sti_smooth_css';
+      s.textContent = '* { -webkit-tap-highlight-color: transparent !important; } html, body { -webkit-overflow-scrolling: touch !important; overscroll-behavior-y: contain !important; } button, a, [role="button"], input, select { touch-action: manipulation !important; }';
+      (document.head || document.documentElement).appendChild(s);
+    } catch(e) {}
+  })();
+"""
 
 @Composable
 fun rememberNetworkConnectivity(): Boolean {
@@ -170,15 +189,44 @@ fun rememberNetworkConnectivity(): Boolean {
 }
 
 class MainActivity : ComponentActivity() {
+  companion object {
+    init {
+      try {
+        android.system.Os.setenv("MESA_LOG_LEVEL", "none", true)
+        android.system.Os.setenv("EGL_LOG_LEVEL", "fatal", true)
+      } catch (_: Throwable) {}
+    }
+  }
+
   private var activeWebView: WebView? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    // Hardware acceleration at Window level for 60/120fps smoothness
+    window.setFlags(
+      android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+      android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+    )
+
+    // Enable high refresh rate (90Hz / 120Hz) on devices that support it
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      try {
+        val display = display
+        val maxMode = display?.supportedModes?.maxByOrNull { it.refreshRate }
+        if (maxMode != null && maxMode.refreshRate > 60f) {
+          window.attributes = window.attributes.apply {
+            preferredDisplayModeId = maxMode.modeId
+          }
+        }
+      } catch (_: Exception) {}
+    }
+
     SessionManager.initCookieManager(this)
     enableEdgeToEdge()
     setContent {
       MyApplicationTheme {
-        OneStiApp(onWebViewBound = { activeWebView = it })
+        OneStiNavGraph(onWebViewBound = { activeWebView = it })
       }
     }
   }
@@ -216,10 +264,74 @@ class MainActivity : ComponentActivity() {
   }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Top-level Compose Navigation Graph with smooth slide & fade transitions between screens.
+ */
+@Composable
+fun OneStiNavGraph(
+  onWebViewBound: (WebView) -> Unit = {}
+) {
+  val navController = rememberNavController()
+  var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+  NavHost(
+    navController = navController,
+    startDestination = AppDestinations.PORTAL,
+    enterTransition = NavigationTransitions.enterFromRight(),
+    exitTransition = NavigationTransitions.exitToLeft(),
+    popEnterTransition = NavigationTransitions.popEnterFromLeft(),
+    popExitTransition = NavigationTransitions.popExitToRight()
+  ) {
+    composable(AppDestinations.PORTAL) {
+      PortalScreen(
+        onWebViewBound = {
+          webViewRef = it
+          onWebViewBound(it)
+        },
+        onNavigateToShortcuts = {
+          navController.navigate(AppDestinations.SHORTCUTS)
+        },
+        onNavigateToAbout = {
+          navController.navigate(AppDestinations.ABOUT)
+        }
+      )
+    }
+
+    composable(AppDestinations.SHORTCUTS) {
+      ShortcutsScreen(
+        onNavigateBack = {
+          navController.popBackStack()
+        },
+        onOpenUrl = { url ->
+          webViewRef?.loadUrl(url)
+          navController.popBackStack()
+        }
+      )
+    }
+
+    composable(AppDestinations.ABOUT) {
+      AboutScreen(
+        onNavigateBack = {
+          navController.popBackStack()
+        }
+      )
+    }
+  }
+}
+
 @Composable
 fun OneStiApp(
   onWebViewBound: (WebView) -> Unit = {}
+) {
+  OneStiNavGraph(onWebViewBound = onWebViewBound)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PortalScreen(
+  onWebViewBound: (WebView) -> Unit = {},
+  onNavigateToShortcuts: () -> Unit = {},
+  onNavigateToAbout: () -> Unit = {}
 ) {
   val context = LocalContext.current
   val isOnline = rememberNetworkConnectivity()
@@ -230,7 +342,7 @@ fun OneStiApp(
   var isPullRefreshing by remember { mutableStateOf(false) }
   var isRetrying by remember { mutableStateOf(false) }
   var loadProgress by remember { mutableFloatStateOf(0f) }
-  var pageTitle by remember { mutableStateOf("ONE STI") }
+  var pageTitle by remember { mutableStateOf("One STI") }
   var hasError by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf("") }
   var backPressedTime by remember { mutableLongStateOf(0L) }
@@ -240,9 +352,19 @@ fun OneStiApp(
     if (isOnline && hasError) {
       hasError = false
       isRetrying = false
-      Toast.makeText(context, "Internet connection restored. Reloading ONE STI...", Toast.LENGTH_SHORT).show()
+      Toast.makeText(context, "Internet connection restored. Reloading One STI...", Toast.LENGTH_SHORT).show()
       webViewInstance?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
       webViewInstance?.reload()
+    }
+  }
+
+  // Periodic background session flush every 30 seconds to guarantee no session data is ever lost
+  LaunchedEffect(Unit) {
+    while (true) {
+      kotlinx.coroutines.delay(30_000L)
+      webViewInstance?.let { wv ->
+        SessionManager.persistSession(context, wv.url)
+      }
     }
   }
 
@@ -285,7 +407,7 @@ fun OneStiApp(
           (context as? Activity)?.finish()
         } else {
           backPressedTime = now
-          Toast.makeText(context, "Press back again to exit ONE STI • Made by MJ", Toast.LENGTH_SHORT).show()
+          Toast.makeText(context, "Press back again to exit One STI • Made by MJ", Toast.LENGTH_SHORT).show()
         }
       }
     }
@@ -607,7 +729,7 @@ fun OneStiApp(
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-              text = "ONE STI • Made by MJ",
+              text = "One STI • Made by MJ",
               style = MaterialTheme.typography.labelMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
               textAlign = TextAlign.Center
@@ -657,8 +779,15 @@ fun OneStiWebViewContainer(
         // Setup CookieManager and restore saved session state
         SessionManager.initCookieManager(ctx, this)
         val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptThirdPartyCookies(this, true)
 
-        // Enable smooth scrolling and eliminate overscroll jitter
+        // Disable intermediate offscreen layer to enable direct hardware GPU compositing
+        setLayerType(View.LAYER_TYPE_NONE, null)
+
+        // Disable nested scrolling on WebView so Chromium's internal compositor thread
+        // handles touch drags, flings, and smooth momentum scrolling at full 60/120Hz
+        isNestedScrollingEnabled = false
+        isScrollContainer = true
         isVerticalScrollBarEnabled = false
         isHorizontalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
@@ -679,9 +808,10 @@ fun OneStiWebViewContainer(
           loadWithOverviewMode = true
           mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
 
-          // Optimize layout and rendering pipeline for high frame-rate responsiveness
+          // Optimize layout and rendering pipeline for responsive student portal browsing
           mediaPlaybackRequiresUserGesture = false
-          offscreenPreRaster = true
+          offscreenPreRaster = true // Pre-renders out-of-viewport tiles for smooth scrolling
+          setRenderPriority(WebSettings.RenderPriority.HIGH)
 
           // Optimize user agent string so Google/Microsoft OAuth does not reject with disallowed_useragent
           // and treats the session as a persistent browser rather than a transient in-app webview
@@ -718,13 +848,20 @@ fun OneStiWebViewContainer(
 
         // WebViewClient to handle navigation, SSO logins, and errors
         webViewClient = object : WebViewClient() {
+          override fun onPageCommitVisible(view: WebView?, url: String?) {
+            super.onPageCommitVisible(view, url)
+            onLoadingChanged(false)
+            view?.evaluateJavascript(SMOOTH_SCROLL_JS, null)
+          }
+
           override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             super.onPageStarted(view, url, favicon)
             onLoadingChanged(true)
             onCanGoBackChanged(view?.canGoBack() == true)
             onCanGoForwardChanged(view?.canGoForward() == true)
 
-            // Inject persistent storage sync and persist cookies
+            // Inject smooth scrolling rules, persistent storage sync, and cookies
+            view?.evaluateJavascript(SMOOTH_SCROLL_JS, null)
             view?.evaluateJavascript(SessionManager.SESSION_PERSISTENCE_JS, null)
             SessionManager.saveLastValidUrl(ctx, url)
           }
@@ -735,7 +872,8 @@ fun OneStiWebViewContainer(
             onCanGoBackChanged(view?.canGoBack() == true)
             onCanGoForwardChanged(view?.canGoForward() == true)
 
-            // Ensure tokens in sessionStorage are mirrored to localStorage and cookies flushed
+            // Ensure smooth scrolling rules, tokens mirrored, and cookies flushed
+            view?.evaluateJavascript(SMOOTH_SCROLL_JS, null)
             view?.evaluateJavascript(SessionManager.SESSION_PERSISTENCE_JS, null)
             SessionManager.persistSession(ctx, url)
             SessionManager.saveLastValidUrl(ctx, url)
@@ -849,8 +987,9 @@ fun OneStiWebViewContainer(
           android.graphics.Color.parseColor("#FFD100")
         )
         setProgressBackgroundColorSchemeColor(android.graphics.Color.WHITE)
+        setDistanceToTriggerSync(320)
 
-        // Only allow pull-to-refresh if the WebView is at the top of the content
+        // Only allow pull-to-refresh if the WebView is at the top of the content without scroll conflicts
         setOnChildScrollUpCallback { _, _ ->
           webView.canScrollVertically(-1)
         }
@@ -867,10 +1006,13 @@ fun OneStiWebViewContainer(
     update = { swipeRefresh ->
       swipeRefresh.isRefreshing = isRefreshing
       val webView = swipeRefresh.getChildAt(0) as? WebView
-      webView?.settings?.cacheMode = if (isOnline) {
+      val targetCacheMode = if (isOnline) {
         WebSettings.LOAD_DEFAULT
       } else {
         WebSettings.LOAD_CACHE_ELSE_NETWORK
+      }
+      if (webView?.settings?.cacheMode != targetCacheMode) {
+        webView?.settings?.cacheMode = targetCacheMode
       }
     }
   )

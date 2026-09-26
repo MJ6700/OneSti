@@ -24,8 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.GraduationCap
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.School
@@ -65,7 +65,7 @@ data class PortalShortcut(
 
 private val STI_SHORTCUTS = listOf(
   PortalShortcut(
-    title = "ONE STI Student Portal",
+    title = "One STI Student Portal",
     subtitle = "Grades, schedules, curriculum, and enrollment status",
     url = "https://one.sti.edu",
     icon = Icons.Default.School,
@@ -95,7 +95,7 @@ private val STI_SHORTCUTS = listOf(
     title = "Academic Evaluation & Grades",
     subtitle = "Midterm and final grade submissions per trimester",
     url = "https://one.sti.edu",
-    icon = Icons.Default.GraduationCap
+    icon = Icons.Default.Assessment
   ),
   PortalShortcut(
     title = "STI Official Website",
@@ -280,7 +280,7 @@ fun ShortcutsScreen(
       item {
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-          text = "ONE STI • Made by MJ",
+          text = "One STI • Made by MJ",
           style = MaterialTheme.typography.labelMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
           modifier = Modifier.fillMaxWidth(),

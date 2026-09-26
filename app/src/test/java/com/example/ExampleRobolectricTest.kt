@@ -16,7 +16,14 @@ class ExampleRobolectricTest {
   fun `read string from context`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val appName = context.getString(R.string.app_name)
-    assertEquals("ONE STI", appName)
+    assertEquals("One STI", appName)
+  }
+
+  @Test
+  fun `verify navigation destinations`() {
+    assertEquals("portal", com.example.navigation.AppDestinations.PORTAL)
+    assertEquals("shortcuts", com.example.navigation.AppDestinations.SHORTCUTS)
+    assertEquals("about", com.example.navigation.AppDestinations.ABOUT)
   }
 
   @Test

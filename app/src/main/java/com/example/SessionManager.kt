@@ -28,14 +28,24 @@ object SessionManager {
 
   val TRACKED_DOMAINS = listOf(
     "https://one.sti.edu",
+    "https://sti.edu",
     "https://sts.sti.edu",
+    "https://elms.sti.edu",
+    "https://enrollment.sti.edu",
+    "https://portal.sti.edu",
     "https://login.microsoftonline.com",
     "https://login.live.com",
+    "https://login.microsoft.com",
     "https://login.windows.net",
     "https://portal.office.com",
     "https://account.activedirectory.windowsazure.com",
     "https://mysignins.microsoft.com",
-    "https://myapps.microsoft.com"
+    "https://myapps.microsoft.com",
+    "https://aadcdn.msauth.net",
+    "https://aadcdn.msftauth.net",
+    "https://autologon.microsoftazuread-sso.com",
+    "https://sts.windows.net",
+    "https://msft.sts.microsoft.com"
   )
 
   /**
@@ -44,7 +54,8 @@ object SessionManager {
    * 1. Restores auth tokens stored in sessionStorage from persistent localStorage.
    * 2. Synchronizes any updates to sessionStorage into localStorage in real time.
    * 3. On Microsoft SSO "Stay signed in?" prompts, automatically keeps the persistent
-   *    session option checked.
+   *    session option checked and confirms "Yes" so persistent refresh tokens are issued.
+   * 4. Pings portal origin every 4 minutes and resets idle timers so the session never expires.
    */
   const val SESSION_PERSISTENCE_JS = """
     (function() {
@@ -110,14 +121,60 @@ object SessionManager {
               }
             } catch (e) {}
           };
+
+          window.addEventListener('beforeunload', syncSession);
+          document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden') syncSession();
+          });
         }
 
-        // 4. Check "Don't show this again" / "Stay signed in" checkbox on Microsoft SSO if present
+        // 4. Check "Stay signed in" / "Don't show this again" on Microsoft and STI SSO
         var kmsiCheckbox = document.getElementById('KmsiCheckboxField') || 
-                           document.querySelector('input[name="DontShowAgain"]');
+                           document.querySelector('input[name="DontShowAgain"]') ||
+                           document.querySelector('input[name="RememberMe"]') ||
+                           document.querySelector('input[id*="RememberMe"]') ||
+                           document.querySelector('input[id*="Kmsi"]');
         if (kmsiCheckbox && !kmsiCheckbox.checked) {
           kmsiCheckbox.checked = true;
           kmsiCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // 5. On Microsoft "Stay signed in?" prompt, confirm with "Yes" so persistent refresh tokens are created
+        var kmsiPromptTitle = document.getElementById('kmsiTitle') || document.querySelector('[data-test-id="kmsiText"]');
+        var submitBtn = document.getElementById('idSIButton9');
+        if (kmsiPromptTitle && submitBtn && !window.__sti_kmsi_submitted) {
+          window.__sti_kmsi_submitted = true;
+          setTimeout(function() {
+            try {
+              if (kmsiCheckbox && !kmsiCheckbox.checked) kmsiCheckbox.checked = true;
+              submitBtn.click();
+            } catch(e) {}
+          }, 350);
+        }
+
+        // 6. Anti-Inactivity Keep-Alive: Prevent STI Portal from timing out / logging out
+        if (!window.__sti_keepalive_active) {
+          window.__sti_keepalive_active = true;
+          // Ping origin every 4 minutes to refresh ASP.NET session cookie
+          setInterval(function() {
+            try {
+              if (location.origin && location.origin.indexOf('sti.edu') !== -1) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', location.origin + '/?_keepalive=' + Date.now(), true);
+                xhr.withCredentials = true;
+                xhr.send();
+              }
+            } catch (e) {}
+          }, 4 * 60 * 1000);
+
+          // Reset client-side idle timers if portal has inactivity checks
+          setInterval(function() {
+            try {
+              if (typeof window.resetSessionTimer === 'function') window.resetSessionTimer();
+              if (typeof window.keepAlive === 'function') window.keepAlive();
+              document.dispatchEvent(new Event('mousemove'));
+            } catch (e) {}
+          }, 2 * 60 * 1000);
         }
       } catch (err) {}
     })();
@@ -166,6 +223,13 @@ object SessionManager {
         val domainsToScan = mutableListOf<String>()
         if (!currentUrl.isNullOrBlank()) {
           domainsToScan.add(currentUrl)
+          try {
+            val uri = android.net.Uri.parse(currentUrl)
+            val host = uri.host
+            if (!host.isNullOrBlank()) {
+              domainsToScan.add("${uri.scheme ?: "https"}://$host")
+            }
+          } catch (_: Exception) {}
         }
         domainsToScan.addAll(TRACKED_DOMAINS)
 
@@ -178,6 +242,9 @@ object SessionManager {
             // Re-inject each cookie with a 10-year Max-Age and Expires date so Android
             // Chromium's SQLite database retains it across app termination and process death
             val cookies = cookieHeader.split(";")
+            val isHttps = domain.startsWith("https://")
+            val secureFlag = if (isHttps) "; Secure" else ""
+
             for (cookie in cookies) {
               val trimmed = cookie.trim()
               if (trimmed.isNotEmpty()) {
@@ -185,8 +252,25 @@ object SessionManager {
                 if (nameValue.isNotEmpty()) {
                   val name = nameValue[0].trim()
                   val value = if (nameValue.size > 1) nameValue[1].trim() else ""
-                  val persistentCookie = "$name=$value; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax; Secure"
-                  cookieManager.setCookie(domain, persistentCookie)
+
+                  // 1. Host-specific cookie
+                  val persistentCookieHost = "$name=$value; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                  cookieManager.setCookie(domain, persistentCookieHost)
+
+                  // 2. Wildcard domain cookie for subdomains
+                  val lowerDomain = domain.lowercase()
+                  val rootDomain = when {
+                    lowerDomain.contains("sti.edu") -> ".sti.edu"
+                    lowerDomain.contains("microsoftonline.com") -> ".microsoftonline.com"
+                    lowerDomain.contains("live.com") -> ".live.com"
+                    lowerDomain.contains("windows.net") -> ".windows.net"
+                    lowerDomain.contains("office.com") -> ".office.com"
+                    else -> null
+                  }
+                  if (rootDomain != null) {
+                    val persistentCookieDomain = "$name=$value; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                    cookieManager.setCookie(domain, persistentCookieDomain)
+                  }
                 }
               }
             }
@@ -207,6 +291,7 @@ object SessionManager {
   fun restoreCookies(context: Context) {
     try {
       val cookieManager = CookieManager.getInstance()
+      cookieManager.setAcceptCookie(true)
       val prefs = getPrefs(context)
       val allEntries = prefs.all
       val expiry = getFarFutureExpiryDate()
@@ -214,7 +299,10 @@ object SessionManager {
       for ((key, value) in allEntries) {
         if (key.startsWith(KEY_COOKIES_PREFIX) && value is String && value.isNotBlank()) {
           val domain = key.substring(KEY_COOKIES_PREFIX.length)
+          val isHttps = domain.startsWith("https://")
+          val secureFlag = if (isHttps) "; Secure" else ""
           val cookies = value.split(";")
+
           for (cookie in cookies) {
             val trimmed = cookie.trim()
             if (trimmed.isNotEmpty()) {
@@ -222,8 +310,23 @@ object SessionManager {
               if (nameValue.isNotEmpty()) {
                 val name = nameValue[0].trim()
                 val cookieVal = if (nameValue.size > 1) nameValue[1].trim() else ""
-                val persistentCookie = "$name=$cookieVal; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax; Secure"
+
+                val persistentCookie = "$name=$cookieVal; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
                 cookieManager.setCookie(domain, persistentCookie)
+
+                val lowerDomain = domain.lowercase()
+                val rootDomain = when {
+                  lowerDomain.contains("sti.edu") -> ".sti.edu"
+                  lowerDomain.contains("microsoftonline.com") -> ".microsoftonline.com"
+                  lowerDomain.contains("live.com") -> ".live.com"
+                  lowerDomain.contains("windows.net") -> ".windows.net"
+                  lowerDomain.contains("office.com") -> ".office.com"
+                  else -> null
+                }
+                if (rootDomain != null) {
+                  val persistentCookieDomain = "$name=$cookieVal; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                  cookieManager.setCookie(domain, persistentCookieDomain)
+                }
               }
             }
           }
@@ -244,6 +347,11 @@ object SessionManager {
     // If user explicitly performed a signout or hit an error page, reset saved page
     if (lower.contains("logout") || lower.contains("signout") || lower.contains("logoff")) {
       getPrefs(context).edit().remove(KEY_LAST_URL).apply()
+      return
+    }
+
+    // Don't save transient login redirects as the main portal home
+    if (lower.contains("login.microsoftonline.com") || lower.contains("sts.sti.edu/adfs/ls")) {
       return
     }
 

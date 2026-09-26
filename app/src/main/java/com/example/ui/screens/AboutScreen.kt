@@ -125,7 +125,7 @@ fun AboutScreen(
       ) {
         Icon(
           imageVector = Icons.Default.School,
-          contentDescription = "ONE STI",
+          contentDescription = "One STI",
           tint = StiYellow,
           modifier = Modifier.size(44.dp)
         )
@@ -134,7 +134,7 @@ fun AboutScreen(
       Spacer(modifier = Modifier.height(12.dp))
 
       Text(
-        text = "ONE STI Student Portal",
+        text = "One STI Student Portal",
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
         color = StiBlue
@@ -206,8 +206,8 @@ fun AboutScreen(
 
           FeatureItem(
             icon = Icons.Default.Speed,
-            title = "Chromium Pre-Rasterization",
-            description = "Tiled offscreen pre-rendering eliminates stutter and blank flashes."
+            title = "Optimized Web Engine",
+            description = "Fluid rendering pipeline with low latency and smooth scrolling."
           )
 
           HorizontalDivider(
@@ -255,7 +255,7 @@ fun AboutScreen(
           Spacer(modifier = Modifier.height(8.dp))
 
           Text(
-            text = "Your Microsoft 365 and ONE STI login tokens are backed up locally. If you ever need to reset web resources, use the controls below.",
+            text = "Your Microsoft 365 and One STI login tokens are backed up locally. If you ever need to reset web resources, use the controls below.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
