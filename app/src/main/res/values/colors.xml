@@ -7,4 +7,18 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    
+    <!-- One STI Brand Palette -->
+    <color name="sti_blue">#005596</color>
+    <color name="sti_blue_dark">#003E6D</color>
+    <color name="sti_blue_light">#E6F0F8</color>
+    <color name="sti_yellow">#FFD100</color>
+    <color name="sti_yellow_dark">#E0B800</color>
+    <color name="sti_bg">#FFFFFF</color>
+    <color name="card_bg">#F8FAFC</color>
+    <color name="card_border">#E2E8F0</color>
+    <color name="text_primary">#0F172A</color>
+    <color name="text_secondary">#64748B</color>
+    <color name="error_bg">#FEE2E2</color>
+    <color name="error_text">#DC2626</color>
 </resources>

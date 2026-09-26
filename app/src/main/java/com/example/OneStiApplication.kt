@@ -16,9 +16,10 @@ class OneStiApplication : Application() {
 
     private fun configureGraphicsEnvironment() {
       try {
+        Os.setenv("MESA_NO_ERROR", "1", true)
+        Os.setenv("MESA_DEBUG", "0", true)
         Os.setenv("MESA_LOG_LEVEL", "none", true)
         Os.setenv("EGL_LOG_LEVEL", "fatal", true)
-        Os.setenv("MESA_DEBUG", "0", true)
       } catch (_: Throwable) {
         // Graceful fallback if Os.setenv is restricted
       }
