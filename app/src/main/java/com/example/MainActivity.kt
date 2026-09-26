@@ -746,7 +746,7 @@ fun PortalScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-              text = "One STI • Made by MJ",
+              text = "One STI v1.1 • Made by MJ",
               style = MaterialTheme.typography.labelMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
               textAlign = TextAlign.Center

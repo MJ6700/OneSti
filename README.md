@@ -1,20 +1,20 @@
-# One STI • Student Portal Android App
+# One STI • Student Portal Android App (v1.1)
 **Made by MJ**
 
-An Android application for the One STI Student Portal with permanent session persistence, 60/120Hz hardware-accelerated scrolling, and full edge-to-edge design.
+An Android application for the One STI Student Portal with permanent multi-account session persistence, 60/120Hz hardware-accelerated scrolling, and full edge-to-edge design.
 
 ---
 
-## 📥 Download APK directly from this GitHub Repository
+## 📥 Download APK v1.1 directly from this GitHub Repository
 
-You can download the ready-to-install Android APK using any of the options below:
+You can download the ready-to-install Android APK (v1.1) using any of the options below:
 
 ### Option 1: Direct File Download in Repository
-- 📱 **[Download One_STI.apk (From apk/ folder)](apk/One_STI.apk?raw=true)**
-- 📱 **[Alternative: ONE_STI_Made_by_MJ.apk](apk/ONE_STI_Made_by_MJ.apk?raw=true)**
+- 📱 **[Download One_STI.apk v1.1 (From apk/ folder)](apk/One_STI.apk?raw=true)**
+- 📱 **[Alternative: ONE_STI_Made_by_MJ.apk v1.1](apk/ONE_STI_Made_by_MJ.apk?raw=true)**
 
 ### Option 2: GitHub Releases
-- Head to the [**Releases**](releases) tab of this GitHub repository to download the latest tagged `app-debug.apk`.
+- Head to the [**Releases**](releases) tab of this GitHub repository to download `One STI v1.1`.
 
 ### Option 3: GitHub Actions Artifacts
 - Check the [**Actions**](actions) tab on every commit to download the freshest automated build artifact.
@@ -27,21 +27,6 @@ You can download the ready-to-install Android APK using any of the options below
 2. Open the downloaded file from your **Downloads** folder or notification panel.
 3. If prompted by Android with *"Install unknown apps"*, tap **Settings** and enable **"Allow from this source"**.
 4. Tap **Install** and enjoy One STI!
-
----
-
-## 🍎 Does it work on iPhone?
-
-**`.apk` files are Android-only** (iPhones run iOS, which cannot run `.apk` packages). 
-
-However, **iPhone users can install One STI as a full-screen home screen app** without an App Store download:
-1. Open **Safari** on your iPhone.
-2. Visit **`https://one.sti.edu`**.
-3. Tap the **Share** button at the bottom of the screen (the square with an arrow pointing up 📤).
-4. Scroll down and tap **"Add to Home Screen"**.
-5. Tap **Add** in the top-right corner.
-
-The **One STI** icon will appear on your iPhone's Home Screen and will launch full-screen like a native app!
 
 ---
 

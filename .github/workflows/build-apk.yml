@@ -43,12 +43,12 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: One STI Student Portal v1.0.0
+          tag_name: v1.1
+          name: One STI Student Portal v1.1
           body: |
-            ## One STI Student Portal App
+            ## One STI Student Portal App v1.1
+            - Permanent multi-account session persistence (never log out)
             - Fluid 60/120Hz performance with GPU acceleration
-            - Permanent session persistence across app launches
             - Full offline caching and integrated download manager
             
             Download the `app-debug.apk` asset below to install on your Android device.
