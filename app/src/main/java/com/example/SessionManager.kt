@@ -25,8 +25,8 @@ object SessionManager {
   private const val KEY_KEEP_SIGNED_IN = "keep_signed_in_active"
   private const val KEY_KNOWN_DOMAINS = "tracked_visited_domains"
 
-  // 10 years in seconds (315360000s)
-  private const val TEN_YEARS_SECONDS = 315360000L
+  // 4+ years college program duration (guaranteed 10 years / 315,360,000s)
+  private const val FOUR_YEARS_PLUS_SECONDS = 315360000L
 
   val TRACKED_DOMAINS = listOf(
     // STI Portals (.edu and .edu.ph)
@@ -217,7 +217,7 @@ object SessionManager {
   private fun getFarFutureExpiryDate(): String {
     val sdf = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US)
     sdf.timeZone = TimeZone.getTimeZone("GMT")
-    val futureTime = System.currentTimeMillis() + (TEN_YEARS_SECONDS * 1000L)
+    val futureTime = System.currentTimeMillis() + (FOUR_YEARS_PLUS_SECONDS * 1000L)
     return sdf.format(Date(futureTime))
   }
 
@@ -314,7 +314,7 @@ object SessionManager {
                     val value = if (nameValue.size > 1) nameValue[1].trim() else ""
 
                     // 1. Host-specific cookie
-                    val persistentCookieHost = "$name=$value; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                    val persistentCookieHost = "$name=$value; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
                     cookieManager.setCookie(domain, persistentCookieHost)
 
                     // 2. Wildcard domain cookies so subdomains share login state seamlessly
@@ -331,7 +331,7 @@ object SessionManager {
                     if (lowerDomain.contains("instructure.com")) rootDomains.add(".instructure.com")
 
                     for (rootDomain in rootDomains.distinct()) {
-                      val persistentCookieDomain = "$name=$value; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                      val persistentCookieDomain = "$name=$value; Domain=$rootDomain; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
                       cookieManager.setCookie(domain, persistentCookieDomain)
                     }
                   }
@@ -375,7 +375,7 @@ object SessionManager {
                 val name = nameValue[0].trim()
                 val cookieVal = if (nameValue.size > 1) nameValue[1].trim() else ""
 
-                val persistentCookie = "$name=$cookieVal; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                val persistentCookie = "$name=$cookieVal; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
                 cookieManager.setCookie(domain, persistentCookie)
 
                 val lowerDomain = domain.lowercase()
@@ -391,7 +391,7 @@ object SessionManager {
                 if (lowerDomain.contains("instructure.com")) rootDomains.add(".instructure.com")
 
                 for (rootDomain in rootDomains.distinct()) {
-                  val persistentCookieDomain = "$name=$cookieVal; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                  val persistentCookieDomain = "$name=$cookieVal; Domain=$rootDomain; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
                   cookieManager.setCookie(domain, persistentCookieDomain)
                 }
               }

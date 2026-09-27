@@ -16,3 +16,8 @@
 local.properties
 .env
 debug.keystore
+
+# Ensure pre-built APKs for GitHub downloads are preserved
+!/apk/
+!/apk/*.apk
+!/public/*.apk
