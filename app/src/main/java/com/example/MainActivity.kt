@@ -823,7 +823,9 @@ fun OneStiWebViewContainer(
           displayZoomControls = false
           useWideViewPort = true
           loadWithOverviewMode = true
-          mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+          mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+          setSupportMultipleWindows(true)
+          javaScriptCanOpenWindowsAutomatically = true
 
           // Optimize layout and rendering pipeline for responsive student portal browsing
           mediaPlaybackRequiresUserGesture = false
@@ -838,8 +840,23 @@ fun OneStiWebViewContainer(
             .replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
         }
 
-        // WebChromeClient for progress, title, and file upload support
+        // WebChromeClient for progress, title, multiple windows, and file upload support
         webChromeClient = object : WebChromeClient() {
+          override fun onCreateWindow(
+            view: WebView?,
+            isDialog: Boolean,
+            isUserGesture: Boolean,
+            resultMsg: android.os.Message?
+          ): Boolean {
+            val transport = resultMsg?.obj as? WebView.WebViewTransport
+            if (transport != null && view != null) {
+              transport.webView = view
+              resultMsg.sendToTarget()
+              return true
+            }
+            return false
+          }
+
           override fun onProgressChanged(view: WebView?, newProgress: Int) {
             onProgressChanged(newProgress / 100f)
             if (newProgress >= 100) {

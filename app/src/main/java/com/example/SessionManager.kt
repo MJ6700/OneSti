@@ -29,28 +29,33 @@ object SessionManager {
   private const val FOUR_YEARS_PLUS_SECONDS = 315360000L
 
   val TRACKED_DOMAINS = listOf(
-    // STI Portals (.edu and .edu.ph)
+    // STI Portals & Services (.edu and .edu.ph)
     "https://one.sti.edu",
-    "https://sti.edu",
-    "https://sts.sti.edu",
-    "https://elms.sti.edu",
-    "https://enrollment.sti.edu",
-    "https://portal.sti.edu",
-    "https://sis.sti.edu",
     "https://one.sti.edu.ph",
+    "https://sti.edu",
     "https://sti.edu.ph",
+    "https://sts.sti.edu",
     "https://sts.sti.edu.ph",
+    "https://elms.sti.edu",
     "https://elms.sti.edu.ph",
-    "https://portal.sti.edu.ph",
+    "https://enrollment.sti.edu",
     "https://enrollment.sti.edu.ph",
+    "https://portal.sti.edu",
+    "https://portal.sti.edu.ph",
+    "https://sis.sti.edu",
+    "https://sis.sti.edu.ph",
+    "https://canvas.sti.edu",
     "https://sti.instructure.com",
+    "https://instructure.com",
 
-    // Microsoft Identity, Office 365, & Azure AD Single Sign-On
+    // Microsoft Identity, Office 365, Teams, & Azure AD Single Sign-On
     "https://login.microsoftonline.com",
     "https://login.live.com",
     "https://login.microsoft.com",
     "https://login.windows.net",
     "https://portal.office.com",
+    "https://www.office.com",
+    "https://office.com",
     "https://account.activedirectory.windowsazure.com",
     "https://account.live.com",
     "https://mysignins.microsoft.com",
@@ -63,25 +68,28 @@ object SessionManager {
     "https://msft.sts.microsoft.com",
     "https://teams.microsoft.com",
     "https://outlook.office.com",
-    "https://outlook.office365.com"
+    "https://outlook.office365.com",
+    "https://onedrive.live.com"
   )
 
   /**
    * JavaScript snippet injected into WebView pages.
    *
-   * 1. Restores auth tokens stored in sessionStorage from persistent localStorage across all accounts.
+   * 1. Restores auth tokens stored in sessionStorage from persistent localStorage across all accounts and portals.
    * 2. Synchronizes any updates to sessionStorage into localStorage in real time.
-   * 3. Protects multi-account OAuth/MSAL/ADAL tokens from being flushed on page transitions.
-   * 4. On Microsoft SSO & STI STS prompts, automatically selects "Stay signed in" / "Remember me"
-   *    and confirms "Yes" so persistent refresh tokens (PRTs) are issued for all accounts.
-   * 5. Pings the portal every 2 minutes and resets idle timers so university sessions never expire.
+   * 3. Protects multi-account OAuth/MSAL/ADAL tokens from being flushed on page transitions or idle events.
+   * 4. Auto-checks "Stay signed in", "Remember me", and "Don't show this again" on all login and consent forms.
+   * 5. Confirms "Yes" on Microsoft KMSI prompts to acquire persistent 90-day/4-year Primary Refresh Tokens (PRTs).
+   * 6. Automatically clicks "Sign in with Microsoft 365" if any portal or subpage bounces to a login view.
+   * 7. Runs an active keep-alive ping on every page every 40 seconds to prevent ASP.NET and OAuth session sliding expirations.
+   * 8. Resets idle timers every 15 seconds across Class Schedule, Grades, Ledger, Enrollment, ELMS, and Profile.
    */
   const val SESSION_PERSISTENCE_JS = """
     (function() {
       try {
         var PREFIX = '__sti_persisted_session_';
 
-        // 1. Restore sessionStorage from persistent localStorage
+        // 1. Restore sessionStorage from persistent localStorage across all accounts
         for (var i = 0; i < localStorage.length; i++) {
           var k = localStorage.key(i);
           if (k && k.indexOf(PREFIX) === 0) {
@@ -156,7 +164,9 @@ object SessionManager {
           'input[id*="RememberMe"]',
           'input[id*="Kmsi"]',
           'input[id*="remember"]',
-          'input[name*="remember"]'
+          'input[name*="remember"]',
+          'input[id*="persist"]',
+          'input[name*="persist"]'
         ];
         for (var s = 0; s < checkSelectors.length; s++) {
           var cb = document.querySelector(checkSelectors[s]);
@@ -182,29 +192,101 @@ object SessionManager {
           }, 300);
         }
 
-        // 6. Anti-Inactivity Keep-Alive: Prevent all STI & Microsoft Portal sessions from timing out
+        // 6. Auto-login if ANY portal or section bounces to a login page (e.g. Schedule, Grades, Ledger, ELMS)
+        // Automatically clicks "Sign in with Microsoft 365" / "Sign in" using existing permanent SSO tokens
+        var loginSelectors = [
+          'a[href*="ExternalLogin"]',
+          'a[href*="OpenIdConnect"]',
+          'a[href*="Microsoft"]',
+          'a[href*="o365"]',
+          'a[href*="O365"]',
+          'a[href*="adfs"]',
+          'button[value="OpenIdConnect"]',
+          'button[name="provider"]',
+          '#btnMicrosoft',
+          '#btnO365',
+          '#btnStudent',
+          '.btn-microsoft',
+          '.btn-o365',
+          '.btn-office365',
+          'input[value*="Office 365"]',
+          'input[value*="Microsoft"]',
+          '.btn-login'
+        ];
+        if (location.pathname && (location.pathname.toLowerCase().indexOf('login') !== -1 || location.pathname.toLowerCase().indexOf('account') !== -1)) {
+          for (var l = 0; l < loginSelectors.length; l++) {
+            var lBtn = document.querySelector(loginSelectors[l]);
+            if (lBtn && !window.__sti_login_clicked) {
+              window.__sti_login_clicked = true;
+              setTimeout(function() {
+                try { lBtn.click(); } catch(e) {}
+              }, 400);
+              break;
+            }
+          }
+        }
+
+        // 7. Universal Anti-Inactivity & Timeout Protection for ALL portals, accounts, and sections:
+        // Covers: Class Schedule, Grades, Ledger, Enrollment, Curriculum, Attendance, ELMS, Profile
         if (!window.__sti_keepalive_active) {
           window.__sti_keepalive_active = true;
-          // Ping origin every 2 minutes to refresh ASP.NET and OAuth session cookies
+
+          // Ping exact current URL for ALL pages every 40 seconds to keep server session active indefinitely
           setInterval(function() {
             try {
-              if (location.origin && (location.origin.indexOf('sti.edu') !== -1 || location.origin.indexOf('microsoft') !== -1 || location.origin.indexOf('office') !== -1)) {
-                var xhr = new XMLHttpRequest();
-                xhr.open('GET', location.origin + '/?_keepalive=' + Date.now(), true);
-                xhr.withCredentials = true;
-                xhr.send();
+              if (location.href && location.protocol.indexOf('http') === 0) {
+                var keepUrl = location.href;
+                var lowerHref = keepUrl.toLowerCase();
+                // Never ping explicit logout endpoints
+                if (lowerHref.indexOf('logout') === -1 && lowerHref.indexOf('signout') === -1 && lowerHref.indexOf('logoff') === -1) {
+                  var sep = keepUrl.indexOf('?') !== -1 ? '&' : '?';
+                  var xhr = new XMLHttpRequest();
+                  xhr.open('GET', keepUrl + sep + '_sti_stay=' + Date.now(), true);
+                  xhr.withCredentials = true;
+                  xhr.send();
+                }
               }
             } catch (e) {}
-          }, 2 * 60 * 1000);
+          }, 40 * 1000);
 
-          // Reset client-side idle timers if portal has inactivity checks
+          // Reset all idle timers and simulate user activity every 15 seconds across all screens
           setInterval(function() {
             try {
+              // Reset all known ASP.NET, PHP, and JS idle timeout counters
+              if (typeof window.idleTime !== 'undefined') window.idleTime = 0;
+              if (typeof window.idleSeconds !== 'undefined') window.idleSeconds = 0;
+              if (typeof window.idleSecondsCounter !== 'undefined') window.idleSecondsCounter = 0;
+              if (typeof window._idleSecondsCounter !== 'undefined') window._idleSecondsCounter = 0;
+              if (typeof window.timeOutTimer !== 'undefined') window.timeOutTimer = 0;
+              if (typeof window.countdownTimer !== 'undefined') window.countdownTimer = 0;
+              if (typeof window.sessionTimeLeft !== 'undefined') window.sessionTimeLeft = 999999;
+              if (typeof window.remainingSeconds !== 'undefined') window.remainingSeconds = 999999;
               if (typeof window.resetSessionTimer === 'function') window.resetSessionTimer();
               if (typeof window.keepAlive === 'function') window.keepAlive();
-              document.dispatchEvent(new Event('mousemove'));
+              if (typeof window.resetIdleTimeout === 'function') window.resetIdleTimeout();
+
+              // Auto-dismiss or click "Extend Session" / "Stay Logged In" on any timeout modals
+              var extendBtns = document.querySelectorAll(
+                'button[id*="extend"], button[id*="Extend"], button[class*="extend"],' +
+                'button[id*="stay"], button[class*="stay"], button[id*="continue"],' +
+                'button[id*="keep"], .btn-extend-session, .btn-stay-signed-in,' +
+                'a[id*="extend"], a[class*="extend"], a[id*="stay"], a[class*="stay"]'
+              );
+              for (var b = 0; b < extendBtns.length; b++) {
+                try { extendBtns[b].click(); } catch(e) {}
+              }
+
+              // Dispatch real interaction events to document, window, and body
+              var eventTypes = ['mousemove', 'mousedown', 'touchstart', 'scroll', 'keydown'];
+              for (var ev = 0; ev < eventTypes.length; ev++) {
+                document.dispatchEvent(new Event(eventTypes[ev], { bubbles: true }));
+                window.dispatchEvent(new Event(eventTypes[ev], { bubbles: true }));
+                if (document.body) {
+                  document.body.dispatchEvent(new Event(eventTypes[ev], { bubbles: true }));
+                }
+              }
             } catch (e) {}
-          }, 60 * 1000);
+          }, 15 * 1000);
         }
       } catch (err) {}
     })();
@@ -289,7 +371,36 @@ object SessionManager {
         val dynamicDomains = prefs.getStringSet(KEY_KNOWN_DOMAINS, emptySet()) ?: emptySet()
         domainsToScan.addAll(dynamicDomains)
 
-        val pathsToCheck = listOf("", "/", "/Student", "/Account", "/Home", "/adfs", "/common", "/organizations")
+        val pathsToCheck = listOf(
+          "",
+          "/",
+          "/Student",
+          "/Student/Schedule",
+          "/Student/ClassSchedule",
+          "/Schedule",
+          "/Student/Grades",
+          "/Grades",
+          "/Student/Curriculum",
+          "/Curriculum",
+          "/Student/Ledger",
+          "/Ledger",
+          "/Student/Attendance",
+          "/Attendance",
+          "/Student/Clearance",
+          "/Clearance",
+          "/Student/Profile",
+          "/Profile",
+          "/Enrollment",
+          "/Enrollment/Schedule",
+          "/Registration",
+          "/Courses",
+          "/Account",
+          "/Home",
+          "/adfs",
+          "/adfs/ls",
+          "/common",
+          "/organizations"
+        )
 
         for (domain in domainsToScan.distinct()) {
           for (subPath in pathsToCheck) {
@@ -417,12 +528,18 @@ object SessionManager {
       return
     }
 
-    // Don't save transient login redirects as the main portal home
-    if (lower.contains("login.microsoftonline.com") || lower.contains("sts.sti.edu/adfs/ls")) {
+    // Do NOT save transient login, signin, or SSO redirects as the last valid portal page
+    if (lower.contains("login") ||
+      lower.contains("signin") ||
+      lower.contains("adfs/ls") ||
+      lower.contains("microsoftonline.com") ||
+      lower.contains("auth") ||
+      lower.contains("oauth")
+    ) {
       return
     }
 
-    // Only save legitimate STI portal pages
+    // Only save legitimate STI portal pages (including Schedule, Grades, Dashboard)
     if (lower.contains("sti.edu")) {
       getPrefs(context).edit().putString(KEY_LAST_URL, url).apply()
     }
