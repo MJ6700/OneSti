@@ -1,83 +1,48 @@
-# 🎓 One STI • Native Android App (v2.0)
-**Crafted with ❤️ by MJ**
+# 🎓 One STI • Student Portal Android App
+**Made by MJ**
 
 [![Build and Release One STI APK](https://github.com/macjamesrequillas10/One-STI/actions/workflows/build-apk.yml/badge.svg)](https://github.com/macjamesrequillas10/One-STI/actions)
-[![Latest Release](https://img.shields.io/badge/Release-v2.0-0B5592?style=flat&logo=android)](releases)
-[![Refresh Rate](https://img.shields.io/badge/Display-144Hz%20Ultra--Smooth-FFC220?style=flat&logo=speedtest)](https://github.com)
+[![Display](https://img.shields.io/badge/Display-144Hz%20Ultra--Smooth-FFC220?style=flat&logo=speedtest)](https://github.com)
+[![Status Bar](https://img.shields.io/badge/Top%20Bar-Solid%20Black-000000?style=flat)](https://github.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A high-performance **Native Android App** for STI College students, faculty, and alumni. Features a complete native student suite (Virtual Student ID, Grades & GWA, Class Schedule, Student Ledger), permanent multi-account session vaulting, 144Hz high refresh rate hardware acceleration, and integrated live campus portals (One STI, STI ELMS Canvas, Microsoft 365, and Student Services).
+An optimized Android application exclusively for the **One STI Student Portal** (`https://one.sti.edu`). Engineered with a sleek solid black status bar, permanent multi-account session vaulting (all accounts never log out), native 144Hz display mode, and real-time push notifications when professors post grades.
 
 ---
 
-## 📥 Download APK v2.0 directly from this Repository
+## 📥 Download One STI APK directly from this GitHub Repository
 
-Download the ready-to-install Android APK (v2.0) using any of the options below:
+Download the ready-to-install Android APK using any of the options below:
 
 ### Option 1: Direct File Download in Repository
-- 📱 **[Download One_STI.apk (v2.0)](apk/One_STI.apk?raw=true)**
-- 📱 **[Alternative: ONE_STI_Made_by_MJ.apk (v2.0)](apk/ONE_STI_Made_by_MJ.apk?raw=true)**
+- 📱 **[Download One_STI.apk (From apk/ folder)](apk/One_STI.apk?raw=true)**
+- 📱 **[Alternative: ONE_STI_Made_by_MJ.apk](apk/ONE_STI_Made_by_MJ.apk?raw=true)**
 
 ### Option 2: GitHub Releases
-- Head over to the [**Releases**](releases) tab of this GitHub repository to download the latest signed APK.
-
-### Option 3: GitHub Actions Artifacts
-- Check the [**Actions**](actions) tab on every commit to download automated test-verified build artifacts.
+- Download from the [**Releases**](releases) section of this GitHub repository.
 
 ---
 
-## 📲 How to Install on Your Android Phone
+## 📲 How to Install on Android
 
-1. Download **`One_STI.apk`** from the link above to your phone.
-2. Open the downloaded APK from your **Downloads** folder or notification tray.
-3. If Android prompts *"Install unknown apps"*, tap **Settings** and enable **"Allow from this source"**.
-4. Tap **Install** and launch **One STI**!
-
----
-
-## ✨ Key Features & Capabilities
-
-### 📱 1. Complete Native Student Suite
-- 🏠 **Native Home / Dashboard**: Interactive digital **Virtual Student ID Card** with student barcode, today's schedule preview, campus announcements, and quick services.
-- 📊 **Grades & Evaluations**: Real-time **GWA / GPA calculation**, term filters (1st Term, 2nd Term, Summer), individual subject breakdowns (Prelim, Midterm, Pre-Final, Final), and academic standing status.
-- 📅 **Class Schedule**: Day-by-day timetable (Monday to Saturday) with room/laboratory, instructor, section, and enrolled units.
-- 💳 **Student Ledger**: Tuition assessment summary, remaining balance, installment due dates (Downpayment, Prelims, Midterms, Pre-Finals, Finals), and accredited payment channels (GCash, Maya, BDO, UnionBank, Cashier).
-- 👤 **Student Profile & Settings**: Student number, enrolled program, campus, 144Hz mode status, and notification controls.
-
-### ⚡ 2. 144Hz & 120Hz Ultra-Smooth Engine
-- Native hardware refresh rate mode selection up to **144Hz, 120Hz, and 90Hz** with minimal post-processing latency.
-- GPU tile pre-rasterization and direct hardware compositing for stutter-free scrolling.
-
-### 🔒 3. Universal Keep-Signed-In Session Vault
-- **Accounts Never Logout**: Automatically transforms session cookies into persistent SQLite records with **10-year expiration dates**.
-- **Native Token Vaulting (`StiSessionBridge`)**: Mirrors `sessionStorage` and `localStorage` authentication tokens (MSAL, ADAL, OAuth) into native Android storage, restoring them across app restarts.
-- **Anti-Inactivity Heartbeat**: Automated background pings and idle resets prevent university portal session timeouts.
-- **Auto-KMSI Confirmation**: Automatically confirms Microsoft's "Stay signed in?" prompt to acquire persistent Primary Refresh Tokens.
-
-### 🔔 4. Real-Time Grade Release Notifications
-- Automatically monitors grade postings and triggers high-priority local push notifications with deep links directly to the grades screen.
-
-### 🌐 5. Integrated Live Campus Portals Hub
-- Instant 1-tap switching between:
-  - 🏫 **One STI Student Portal** (`one.sti.edu`)
-  - 📖 **STI ELMS Canvas** (`elms.sti.edu`)
-  - 💼 **Microsoft 365 / Outlook** (`portal.office.com`)
-  - 📋 **Student Services System** (`sts.sti.edu`)
-
-### 🖤 6. Sleek Black Top & Bottom System Bars
-- Solid black status bar and bottom navigation bar with crisp white icons and edge-to-edge Material 3 layout.
+1. Download **`One_STI.apk`** to your phone.
+2. Open the file from your **Downloads** or notification bar.
+3. If prompted with *"Install unknown apps"*, tap **Settings** and enable **"Allow from this source"**.
+4. Tap **Install** and log in to One STI!
 
 ---
 
-## 🛠️ Tech Stack & Architecture
+## ✨ Features
 
-- **Language:** Kotlin 100%
-- **UI Toolkit:** Jetpack Compose & Material Design 3 (M3)
-- **Architecture:** Clean MVVM + Repository Pattern
-- **Navigation:** Jetpack Navigation Compose with type-safe route keys
-- **Local Persistence:** Android SharedPreferences + SQLite Persistent Cookie Jar
-- **Testing:** Local JVM Robolectric Test Suite
-- **CI/CD:** GitHub Actions Automated APK Builder & Release Publisher
+- 🖤 **Sleek Solid Black Top Bar:** Status bar header matches edge-to-edge black styling with crisp white status indicators.
+- ⚡ **144Hz Ultra-Smooth Engine:** Full support for 144Hz, 120Hz, and 90Hz displays with minimal post-processing latency and GPU tile pre-rasterization.
+- 🔒 **Permanent Login (All Accounts Never Log Out):** 
+  - Converts all session cookies into persistent records with 10-year expiration dates.
+  - Native token vaulting (`StiSessionBridge`) mirrors all `sessionStorage` and `localStorage` auth tokens into native storage.
+  - Automatic Microsoft KMSI ("Stay signed in?") confirmation.
+- 🔄 **Anti-Inactivity Keep-Alive:** Periodic 25-second heartbeats and idle resets prevent university portal session timeouts.
+- 🔔 **Grade Release Push Notifications:** Automatically monitors student profile grades and sends high-priority notifications with direct deep links.
+- 📶 **Offline Caching & Smart Reconnect:** View previously loaded portal content offline with automatic reconnection when data restores.
 
 ---
 
@@ -103,5 +68,4 @@ gradle assembleDebug
 ## 👨‍💻 Developer & Credits
 
 - **Developer:** MJ (Mac James)
-- **Application:** One STI Native Android Edition
-- **Version:** v2.0
+- **Application:** One STI

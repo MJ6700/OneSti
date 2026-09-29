@@ -162,21 +162,6 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `verify native student data manager loads profile and schedule`() {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    val profile = com.example.data.StudentDataManager.getProfile(context)
-    org.junit.Assert.assertNotNull(profile)
-    org.junit.Assert.assertTrue(profile.name.isNotBlank())
-    org.junit.Assert.assertTrue(profile.studentNumber.isNotBlank())
-
-    val schedule = com.example.data.StudentDataManager.getDefaultSchedule()
-    org.junit.Assert.assertTrue(schedule.isNotEmpty())
-
-    val grades = com.example.data.StudentDataManager.getDefaultGrades()
-    org.junit.Assert.assertTrue(grades.isNotEmpty())
-  }
-
-  @Test
   fun `verify send test notification runs without error`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     com.example.notifications.GradeNotificationManager.sendTestNotification(context)

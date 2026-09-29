@@ -77,14 +77,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
@@ -100,9 +94,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -110,16 +101,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.navigation.AppDestinations
 import com.example.navigation.NavigationTransitions
 import com.example.ui.screens.AboutScreen
-import com.example.ui.screens.DashboardScreen
-import com.example.ui.screens.GradesScreen
-import com.example.ui.screens.ScheduleScreen
-import com.example.ui.screens.LedgerScreen
-import com.example.ui.screens.ProfileScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -225,7 +210,8 @@ class MainActivity : ComponentActivity() {
   companion object {
     init {
       try {
-        android.system.Os.setenv("MESA_LOG_LEVEL", "none", true)
+        android.system.Os.setenv("MESA_LOG_LEVEL", "silent", true)
+        android.system.Os.setenv("LIBGL_DRI3_DISABLE", "1", true)
         android.system.Os.setenv("EGL_LOG_LEVEL", "fatal", true)
       } catch (_: Throwable) {}
     }
@@ -236,13 +222,13 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
-    // Hardware acceleration at Window level for 60/120fps smoothness
+    // Hardware acceleration at Window level for smoothness
     window.setFlags(
       android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
       android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
     )
 
-    // Enable high refresh rate (144Hz / 120Hz / 90Hz) on devices that support it for ultra-smooth experience
+    // Enable high refresh rate (144Hz / 120Hz / 90Hz) safely on devices that support it
     try {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         val display = display
@@ -262,7 +248,6 @@ class MainActivity : ComponentActivity() {
           attrs.preferredRefreshRate = bestMode.refreshRate
           window.attributes = attrs
         }
-        window.setPreferMinimalPostProcessing(true)
       } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
         @Suppress("DEPRECATION")
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
@@ -355,8 +340,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Top-level Compose Navigation Graph with smooth slide & fade transitions between screens
- * and unified persistent Bottom Navigation Bar.
+ * Top-level Compose Navigation Graph with smooth slide & fade transitions between screens.
  */
 @Composable
 fun OneStiNavGraph(
@@ -364,226 +348,33 @@ fun OneStiNavGraph(
 ) {
   val navController = rememberNavController()
   var webViewRef by remember { mutableStateOf<WebView?>(null) }
-  var pendingPortalUrl by remember { mutableStateOf<String?>(null) }
 
-  val navBackStackEntry by navController.currentBackStackEntryAsState()
-  val currentRoute = navBackStackEntry?.destination?.route ?: AppDestinations.DASHBOARD
-
-  val showBottomBar = currentRoute in listOf(
-    AppDestinations.DASHBOARD,
-    AppDestinations.GRADES,
-    AppDestinations.SCHEDULE,
-    AppDestinations.LEDGER,
-    AppDestinations.PORTAL
-  )
-
-  Scaffold(
-    containerColor = Color.Black,
-    bottomBar = {
-      if (showBottomBar) {
-        NavigationBar(
-          containerColor = Color.Black,
-          contentColor = Color.White,
-          tonalElevation = 8.dp,
-          modifier = Modifier.testTag("app_bottom_nav_bar")
-        ) {
-          NavigationBarItem(
-            selected = currentRoute == AppDestinations.DASHBOARD,
-            onClick = {
-              if (currentRoute != AppDestinations.DASHBOARD) {
-                navController.navigate(AppDestinations.DASHBOARD) {
-                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
-                  launchSingleTop = true
-                  restoreState = true
-                }
-              }
-            },
-            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-            label = { Text("Home") },
-            colors = NavigationBarItemDefaults.colors(
-              selectedIconColor = StiDarkBlue,
-              selectedTextColor = StiYellow,
-              indicatorColor = StiYellow,
-              unselectedIconColor = Color.White.copy(alpha = 0.6f),
-              unselectedTextColor = Color.White.copy(alpha = 0.6f)
-            ),
-            modifier = Modifier.testTag("nav_item_dashboard")
-          )
-
-          NavigationBarItem(
-            selected = currentRoute == AppDestinations.GRADES,
-            onClick = {
-              if (currentRoute != AppDestinations.GRADES) {
-                navController.navigate(AppDestinations.GRADES) {
-                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
-                  launchSingleTop = true
-                  restoreState = true
-                }
-              }
-            },
-            icon = { Icon(Icons.Default.Assessment, contentDescription = "Grades") },
-            label = { Text("Grades") },
-            colors = NavigationBarItemDefaults.colors(
-              selectedIconColor = StiDarkBlue,
-              selectedTextColor = StiYellow,
-              indicatorColor = StiYellow,
-              unselectedIconColor = Color.White.copy(alpha = 0.6f),
-              unselectedTextColor = Color.White.copy(alpha = 0.6f)
-            ),
-            modifier = Modifier.testTag("nav_item_grades")
-          )
-
-          NavigationBarItem(
-            selected = currentRoute == AppDestinations.SCHEDULE,
-            onClick = {
-              if (currentRoute != AppDestinations.SCHEDULE) {
-                navController.navigate(AppDestinations.SCHEDULE) {
-                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
-                  launchSingleTop = true
-                  restoreState = true
-                }
-              }
-            },
-            icon = { Icon(Icons.Default.CalendarMonth, contentDescription = "Schedule") },
-            label = { Text("Schedule") },
-            colors = NavigationBarItemDefaults.colors(
-              selectedIconColor = StiDarkBlue,
-              selectedTextColor = StiYellow,
-              indicatorColor = StiYellow,
-              unselectedIconColor = Color.White.copy(alpha = 0.6f),
-              unselectedTextColor = Color.White.copy(alpha = 0.6f)
-            ),
-            modifier = Modifier.testTag("nav_item_schedule")
-          )
-
-          NavigationBarItem(
-            selected = currentRoute == AppDestinations.LEDGER,
-            onClick = {
-              if (currentRoute != AppDestinations.LEDGER) {
-                navController.navigate(AppDestinations.LEDGER) {
-                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
-                  launchSingleTop = true
-                  restoreState = true
-                }
-              }
-            },
-            icon = { Icon(Icons.Default.AccountBalance, contentDescription = "Ledger") },
-            label = { Text("Ledger") },
-            colors = NavigationBarItemDefaults.colors(
-              selectedIconColor = StiDarkBlue,
-              selectedTextColor = StiYellow,
-              indicatorColor = StiYellow,
-              unselectedIconColor = Color.White.copy(alpha = 0.6f),
-              unselectedTextColor = Color.White.copy(alpha = 0.6f)
-            ),
-            modifier = Modifier.testTag("nav_item_ledger")
-          )
-
-          NavigationBarItem(
-            selected = currentRoute == AppDestinations.PORTAL,
-            onClick = {
-              if (currentRoute != AppDestinations.PORTAL) {
-                navController.navigate(AppDestinations.PORTAL) {
-                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
-                  launchSingleTop = true
-                  restoreState = true
-                }
-              }
-            },
-            icon = { Icon(Icons.Default.Language, contentDescription = "Live Portal") },
-            label = { Text("Portal") },
-            colors = NavigationBarItemDefaults.colors(
-              selectedIconColor = StiDarkBlue,
-              selectedTextColor = StiYellow,
-              indicatorColor = StiYellow,
-              unselectedIconColor = Color.White.copy(alpha = 0.6f),
-              unselectedTextColor = Color.White.copy(alpha = 0.6f)
-            ),
-            modifier = Modifier.testTag("nav_item_portal")
-          )
+  NavHost(
+    navController = navController,
+    startDestination = AppDestinations.PORTAL,
+    enterTransition = NavigationTransitions.enterFromRight(),
+    exitTransition = NavigationTransitions.exitToLeft(),
+    popEnterTransition = NavigationTransitions.popEnterFromLeft(),
+    popExitTransition = NavigationTransitions.popExitToRight()
+  ) {
+    composable(AppDestinations.PORTAL) {
+      PortalScreen(
+        onWebViewBound = {
+          webViewRef = it
+          onWebViewBound(it)
+        },
+        onNavigateToAbout = {
+          navController.navigate(AppDestinations.ABOUT)
         }
-      }
+      )
     }
-  ) { innerPadding ->
-    NavHost(
-      navController = navController,
-      startDestination = AppDestinations.DASHBOARD,
-      modifier = Modifier.padding(innerPadding),
-      enterTransition = NavigationTransitions.enterFromRight(),
-      exitTransition = NavigationTransitions.exitToLeft(),
-      popEnterTransition = NavigationTransitions.popEnterFromLeft(),
-      popExitTransition = NavigationTransitions.popExitToRight()
-    ) {
-      composable(AppDestinations.DASHBOARD) {
-        DashboardScreen(
-          onNavigateToGrades = { navController.navigate(AppDestinations.GRADES) },
-          onNavigateToSchedule = { navController.navigate(AppDestinations.SCHEDULE) },
-          onNavigateToLedger = { navController.navigate(AppDestinations.LEDGER) },
-          onNavigateToPortal = { url ->
-            pendingPortalUrl = url
-            navController.navigate(AppDestinations.PORTAL)
-          },
-          onNavigateToProfile = { navController.navigate(AppDestinations.PROFILE) }
-        )
-      }
 
-      composable(AppDestinations.GRADES) {
-        GradesScreen(
-          onNavigateBack = { navController.popBackStack() },
-          onOpenLivePortal = {
-            pendingPortalUrl = "https://one.sti.edu/Student/Grades"
-            navController.navigate(AppDestinations.PORTAL)
-          }
-        )
-      }
-
-      composable(AppDestinations.SCHEDULE) {
-        ScheduleScreen(
-          onNavigateBack = { navController.popBackStack() },
-          onOpenLivePortal = {
-            pendingPortalUrl = "https://one.sti.edu/Student/ClassSchedule"
-            navController.navigate(AppDestinations.PORTAL)
-          }
-        )
-      }
-
-      composable(AppDestinations.LEDGER) {
-        LedgerScreen(
-          onNavigateBack = { navController.popBackStack() },
-          onOpenLivePortal = {
-            pendingPortalUrl = "https://one.sti.edu/Student/Ledger"
-            navController.navigate(AppDestinations.PORTAL)
-          }
-        )
-      }
-
-      composable(AppDestinations.PORTAL) {
-        PortalScreen(
-          initialUrlOverride = pendingPortalUrl,
-          onWebViewBound = {
-            webViewRef = it
-            onWebViewBound(it)
-          },
-          onNavigateToAbout = {
-            navController.navigate(AppDestinations.ABOUT)
-          }
-        )
-      }
-
-      composable(AppDestinations.PROFILE) {
-        ProfileScreen(
-          onNavigateBack = { navController.popBackStack() },
-          onNavigateToAbout = { navController.navigate(AppDestinations.ABOUT) }
-        )
-      }
-
-      composable(AppDestinations.ABOUT) {
-        AboutScreen(
-          onNavigateBack = {
-            navController.popBackStack()
-          }
-        )
-      }
+    composable(AppDestinations.ABOUT) {
+      AboutScreen(
+        onNavigateBack = {
+          navController.popBackStack()
+        }
+      )
     }
   }
 }
@@ -598,7 +389,6 @@ fun OneStiApp(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortalScreen(
-  initialUrlOverride: String? = null,
   onWebViewBound: (WebView) -> Unit = {},
   onNavigateToAbout: () -> Unit = {}
 ) {
@@ -706,15 +496,7 @@ fun PortalScreen(
 
   val activity = context as? Activity
   val deepLinkUrl = remember { activity?.intent?.getStringExtra(GradeNotificationManager.EXTRA_TARGET_URL) }
-  val initialUrl = remember(initialUrlOverride) {
-    initialUrlOverride ?: deepLinkUrl ?: SessionManager.getLastValidUrl(context, ONE_STI_URL)
-  }
-
-  LaunchedEffect(initialUrlOverride) {
-    if (!initialUrlOverride.isNullOrBlank()) {
-      webViewInstance?.loadUrl(initialUrlOverride)
-    }
-  }
+  val initialUrl = remember { deepLinkUrl ?: SessionManager.getLastValidUrl(context, ONE_STI_URL) }
 
   val animatedProgress by animateFloatAsState(
     targetValue = if (isLoading) loadProgress.coerceIn(0.08f, 1f) else 1f,
@@ -738,128 +520,6 @@ fun PortalScreen(
           .windowInsetsTopHeight(WindowInsets.statusBars)
           .background(Color.Black)
       )
-
-      // Live Portal Header & Quick Links
-      Surface(
-        color = Color.Black,
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Column {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Text(
-                text = "ONE STI LIVE PORTAL",
-                color = Color.White,
-                fontWeight = FontWeight.Black,
-                fontSize = 15.sp,
-                letterSpacing = 0.5.sp
-              )
-              Spacer(modifier = Modifier.width(8.dp))
-              Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = StiYellow
-              ) {
-                Text(
-                  text = "LIVE",
-                  color = StiDarkBlue,
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Black,
-                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                )
-              }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              IconButton(
-                onClick = { webViewInstance?.reload() },
-                modifier = Modifier.size(36.dp)
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Refresh,
-                  contentDescription = "Reload",
-                  tint = Color.White,
-                  modifier = Modifier.size(20.dp)
-                )
-              }
-              IconButton(
-                onClick = onNavigateToAbout,
-                modifier = Modifier.size(36.dp)
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Info,
-                  contentDescription = "About",
-                  tint = StiYellow,
-                  modifier = Modifier.size(20.dp)
-                )
-              }
-            }
-          }
-
-          // Quick Chips for STI Portals
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            val currentWebUrl = webViewInstance?.url.orEmpty()
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (currentWebUrl.contains("one.sti") || currentWebUrl.isEmpty()) StiBlue else Color(0xFF1E293B),
-              modifier = Modifier
-                .weight(1f)
-                .clickable { webViewInstance?.loadUrl("https://one.sti.edu") }
-            ) {
-              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-                Text("One STI", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-              }
-            }
-
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (currentWebUrl.contains("elms")) StiBlue else Color(0xFF1E293B),
-              modifier = Modifier
-                .weight(1f)
-                .clickable { webViewInstance?.loadUrl("https://elms.sti.edu") }
-            ) {
-              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-                Text("ELMS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-              }
-            }
-
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (currentWebUrl.contains("office") || currentWebUrl.contains("microsoft")) StiBlue else Color(0xFF1E293B),
-              modifier = Modifier
-                .weight(1f)
-                .clickable { webViewInstance?.loadUrl("https://portal.office.com") }
-            ) {
-              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-                Text("M365", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-              }
-            }
-
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (currentWebUrl.contains("sts.sti")) StiBlue else Color(0xFF1E293B),
-              modifier = Modifier
-                .weight(1f)
-                .clickable { webViewInstance?.loadUrl("https://sts.sti.edu") }
-            ) {
-              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-                Text("STS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-              }
-            }
-          }
-          Spacer(modifier = Modifier.height(4.dp))
-        }
-      }
 
       Box(
         modifier = Modifier
@@ -1230,9 +890,6 @@ fun OneStiWebViewContainer(
 
         // Clean white background for standard One STI portal
         setBackgroundColor(android.graphics.Color.WHITE)
-
-        // Disable intermediate offscreen layer to enable direct hardware GPU compositing
-        setLayerType(View.LAYER_TYPE_NONE, null)
 
         // Disable nested scrolling on WebView so Chromium's internal compositor thread
         // handles touch drags, flings, and smooth momentum scrolling at full 60/120Hz
