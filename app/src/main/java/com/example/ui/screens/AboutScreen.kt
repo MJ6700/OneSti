@@ -31,8 +31,9 @@ import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Speed
+import com.example.notifications.GradeNotificationManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -102,7 +103,9 @@ fun AboutScreen(
           }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = StiBlue
+          containerColor = Color.Black,
+          titleContentColor = Color.White,
+          navigationIconContentColor = Color.White
         )
       )
     }
@@ -120,13 +123,13 @@ fun AboutScreen(
         modifier = Modifier
           .size(80.dp)
           .clip(RoundedCornerShape(20.dp))
-          .background(StiBlue),
+          .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center
       ) {
         Icon(
           imageVector = Icons.Default.School,
           contentDescription = "One STI",
-          tint = StiYellow,
+          tint = MaterialTheme.colorScheme.secondary,
           modifier = Modifier.size(44.dp)
         )
       }
@@ -137,7 +140,7 @@ fun AboutScreen(
         text = "One STI Student Portal",
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
-        color = StiBlue
+        color = MaterialTheme.colorScheme.primary
       )
 
       Text(
@@ -154,10 +157,10 @@ fun AboutScreen(
         color = StiYellow.copy(alpha = 0.25f)
       ) {
         Text(
-          text = "Version 1.0 • Smooth Animation Release",
+          text = "Version 1.1 • Fast, Smooth & Permanent Session",
           style = MaterialTheme.typography.labelSmall,
           fontWeight = FontWeight.Bold,
-          color = StiBlue,
+          color = MaterialTheme.colorScheme.primary,
           modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
         )
       }
@@ -205,9 +208,9 @@ fun AboutScreen(
           )
 
           FeatureItem(
-            icon = Icons.Default.Speed,
-            title = "Optimized Web Engine",
-            description = "Fluid rendering pipeline with low latency and smooth scrolling."
+            icon = Icons.Default.Animation,
+            title = "Ultra-Smooth 144Hz & 120Hz Engine",
+            description = "Native hardware-accelerated 144Hz/120Hz display mode with GPU compositor pre-rasterization and ultra-low input latency."
           )
 
           HorizontalDivider(
@@ -231,6 +234,69 @@ fun AboutScreen(
             title = "Integrated Download Manager",
             description = "Direct PDF, syllabus, and assessment downloads with system notifications."
           )
+
+          HorizontalDivider(
+            modifier = Modifier.padding(vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
+          )
+
+          FeatureItem(
+            icon = Icons.Default.Notifications,
+            title = "Automatic Grade Alerts",
+            description = "Instant push notification whenever a professor posts a new grade to your profile."
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.height(20.dp))
+
+      // Grade Alert Status Card
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Text(
+            text = "Grade Notifications",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = StiBlue
+          )
+
+          Spacer(modifier = Modifier.height(6.dp))
+
+          Text(
+            text = "Automatic background monitoring is active. Whenever a new evaluation or grade appears in your portal, you will receive a local push notification.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          OutlinedButton(
+            onClick = {
+              GradeNotificationManager.notifyNewGrade(
+                context = context,
+                courseCode = "CS101",
+                courseDescription = "Data Structures & Algorithms",
+                grade = "1.25",
+                term = "Midterm"
+              )
+              Toast.makeText(context, "Test grade push notification sent!", Toast.LENGTH_SHORT).show()
+            },
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(44.dp)
+              .testTag("send_test_grade_notification_button")
+          ) {
+            Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp), tint = StiBlue)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Send Test Grade Alert", fontSize = 12.sp, color = StiBlue)
+          }
         }
       }
 
@@ -284,8 +350,12 @@ fun AboutScreen(
 
             Button(
               onClick = {
-                WebStorage.getInstance().deleteAllData()
-                Toast.makeText(context, "Temporary web cache cleared", Toast.LENGTH_SHORT).show()
+                // Clear temporary web cache while keeping login tokens and cookies safe
+                try {
+                  android.webkit.WebView(context).clearCache(true)
+                  SessionManager.persistSession(context, null)
+                  Toast.makeText(context, "Web cache cleared. Accounts stay logged in.", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {}
               },
               shape = RoundedCornerShape(10.dp),
               colors = ButtonDefaults.buttonColors(

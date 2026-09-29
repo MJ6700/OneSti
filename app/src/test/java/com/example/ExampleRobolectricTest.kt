@@ -22,7 +22,6 @@ class ExampleRobolectricTest {
   @Test
   fun `verify navigation destinations`() {
     assertEquals("portal", com.example.navigation.AppDestinations.PORTAL)
-    assertEquals("shortcuts", com.example.navigation.AppDestinations.SHORTCUTS)
     assertEquals("about", com.example.navigation.AppDestinations.ABOUT)
   }
 
@@ -67,5 +66,119 @@ class ExampleRobolectricTest {
     assert(js.contains("__sti_persisted_session_"))
     assert(js.contains("sessionStorage"))
     assert(js.contains("localStorage"))
+  }
+
+  @Test
+  fun `verify grade notification channel creation`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    com.example.notifications.GradeNotificationManager.createNotificationChannel(context)
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+    val channel = notificationManager.getNotificationChannel(com.example.notifications.GradeNotificationManager.CHANNEL_ID)
+    org.junit.Assert.assertNotNull(channel)
+    assertEquals("Grade Updates", channel.name)
+    assertEquals(android.app.NotificationManager.IMPORTANCE_HIGH, channel.importance)
+  }
+
+  @Test
+  fun `verify grade tracker parses json and detects newly posted grades`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    com.example.data.GradeTracker.clearGradeCache(context)
+
+    val jsonPayload = """
+      [
+        {
+          "courseCode": "CS101",
+          "courseDescription": "Introduction to Computing",
+          "grade": "1.25",
+          "term": "Midterm"
+        },
+        {
+          "courseCode": "MATH101",
+          "courseDescription": "College Algebra",
+          "grade": "1.50",
+          "term": "Midterm"
+        }
+      ]
+    """.trimIndent()
+
+    // 1. Initial snapshot should establish baseline without false positives
+    val initialNew = com.example.data.GradeTracker.processJsonGrades(context, jsonPayload)
+    assertEquals(0, initialNew.size)
+
+    // 2. Subsequent check with new grade posted should detect the newly posted subject
+    val updatedPayload = """
+      [
+        {
+          "courseCode": "CS101",
+          "courseDescription": "Introduction to Computing",
+          "grade": "1.25",
+          "term": "Midterm"
+        },
+        {
+          "courseCode": "MATH101",
+          "courseDescription": "College Algebra",
+          "grade": "1.50",
+          "term": "Midterm"
+        },
+        {
+          "courseCode": "ENG101",
+          "courseDescription": "Purposive Communication",
+          "grade": "1.00",
+          "term": "Midterm"
+        }
+      ]
+    """.trimIndent()
+
+    val secondPassNew = com.example.data.GradeTracker.processJsonGrades(context, updatedPayload)
+    assertEquals(1, secondPassNew.size)
+    assertEquals("ENG101", secondPassNew[0].courseCode)
+    assertEquals("1.00", secondPassNew[0].grade)
+
+    // 3. Repeated pass with same data produces no duplicate notifications
+    val repeatedPass = com.example.data.GradeTracker.processJsonGrades(context, updatedPayload)
+    assertEquals(0, repeatedPass.size)
+  }
+
+  @Test
+  fun `verify main activity launches and sets up hardware acceleration and window flags`() {
+    val controller = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup()
+    val activity = controller.get()
+    org.junit.Assert.assertNotNull(activity)
+    val flags = activity.window.attributes.flags
+    val isHardwareAccelerated = (flags and android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED) != 0
+    org.junit.Assert.assertTrue(isHardwareAccelerated)
+  }
+
+  @Test
+  fun `verify sti session bridge persists and retrieves web tokens`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val bridge = com.example.bridge.StiSessionBridge(context)
+    val testOrigin = "https://one.sti.edu"
+    val testTokens = """{"id_token":"mock_jwt_12345","user_id":"02000123456"}"""
+    bridge.saveWebTokens(testOrigin, testTokens)
+
+    val retrieved = bridge.getWebTokens(testOrigin)
+    assertEquals(testTokens, retrieved)
+  }
+
+  @Test
+  fun `verify native student data manager loads profile and schedule`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val profile = com.example.data.StudentDataManager.getProfile(context)
+    org.junit.Assert.assertNotNull(profile)
+    org.junit.Assert.assertTrue(profile.name.isNotBlank())
+    org.junit.Assert.assertTrue(profile.studentNumber.isNotBlank())
+
+    val schedule = com.example.data.StudentDataManager.getDefaultSchedule()
+    org.junit.Assert.assertTrue(schedule.isNotEmpty())
+
+    val grades = com.example.data.StudentDataManager.getDefaultGrades()
+    org.junit.Assert.assertTrue(grades.isNotEmpty())
+  }
+
+  @Test
+  fun `verify send test notification runs without error`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    com.example.notifications.GradeNotificationManager.sendTestNotification(context)
   }
 }

@@ -9,13 +9,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.Executors
 
 /**
- * Manages persistent login session for the ONE STI Portal and all associated accounts.
+ * Manages persistent login sessions for ONE STI Portal and ALL associated student,
+ * faculty, Microsoft 365, Canvas/ELMS, and SSO institutional accounts.
  *
- * Ensures that session cookies, tokens, and browser state for ALL student, faculty,
- * and Microsoft 365 / STI SSO accounts persist indefinitely across app closures,
- * background task kills, and device restarts so users never get signed out.
+ * Guarantees that cookies, tokens, and browser state for ALL accounts never expire
+ * or log out automatically under any circumstances.
  */
 object SessionManager {
 
@@ -25,8 +26,11 @@ object SessionManager {
   private const val KEY_KEEP_SIGNED_IN = "keep_signed_in_active"
   private const val KEY_KNOWN_DOMAINS = "tracked_visited_domains"
 
-  // 4+ years college program duration (guaranteed 10 years / 315,360,000s)
-  private const val FOUR_YEARS_PLUS_SECONDS = 315360000L
+  // 10 years in seconds (315,360,000s)
+  private const val TEN_YEARS_SECONDS = 315360000L
+
+  private val persistExecutor = Executors.newSingleThreadExecutor()
+  @Volatile private var isPersistQueued = false
 
   val TRACKED_DOMAINS = listOf(
     // STI Portals & Services (.edu and .edu.ph)
@@ -47,6 +51,12 @@ object SessionManager {
     "https://canvas.sti.edu",
     "https://sti.instructure.com",
     "https://instructure.com",
+    "https://adfs.sti.edu",
+    "https://adfs.sti.edu.ph",
+    "https://sso.sti.edu",
+    "https://sso.sti.edu.ph",
+    "https://auth.sti.edu",
+    "https://auth.sti.edu.ph",
 
     // Microsoft Identity, Office 365, Teams, & Azure AD Single Sign-On
     "https://login.microsoftonline.com",
@@ -69,62 +79,141 @@ object SessionManager {
     "https://teams.microsoft.com",
     "https://outlook.office.com",
     "https://outlook.office365.com",
-    "https://onedrive.live.com"
+    "https://onedrive.live.com",
+
+    // Google Identity SSO (if linked to institutional accounts)
+    "https://accounts.google.com",
+    "https://accounts.google.com.ph"
   )
 
   /**
-   * JavaScript snippet injected into WebView pages.
+   * Universal JavaScript persistence and anti-inactivity monitor injected into every web page.
    *
-   * 1. Restores auth tokens stored in sessionStorage from persistent localStorage across all accounts and portals.
-   * 2. Synchronizes any updates to sessionStorage into localStorage in real time.
-   * 3. Protects multi-account OAuth/MSAL/ADAL tokens from being flushed on page transitions or idle events.
-   * 4. Auto-checks "Stay signed in", "Remember me", and "Don't show this again" on all login and consent forms.
-   * 5. Confirms "Yes" on Microsoft KMSI prompts to acquire persistent 90-day/4-year Primary Refresh Tokens (PRTs).
-   * 6. Automatically clicks "Sign in with Microsoft 365" if any portal or subpage bounces to a login view.
-   * 7. Runs an active keep-alive ping on every page every 40 seconds to prevent ASP.NET and OAuth session sliding expirations.
-   * 8. Resets idle timers every 15 seconds across Class Schedule, Grades, Ledger, Enrollment, ELMS, and Profile.
+   * 1. Monkey-patches document.cookie so all newly set session cookies are converted to 10-year persistent cookies.
+   * 2. Synchronizes sessionStorage and localStorage bidirectionally with native Android SharedPreferences.
+   * 3. Prevents multi-account OAuth/MSAL/ADAL token loss on tab/page transitions or process death.
+   * 4. Auto-checks "Stay signed in", "Remember me", and "Don't ask again on this device".
+   * 5. Confirms "Yes" on Microsoft KMSI prompts to acquire rolling Primary Refresh Tokens.
+   * 6. Automatically clicks SSO login buttons if bouncing to login and user is not entering credentials.
+   * 7. Runs an active keep-alive ping on every page every 25 seconds to prevent ASP.NET and OAuth sliding session expirations.
+   * 8. Resets idle timers every 10 seconds across Class Schedule, Grades, Ledger, Enrollment, ELMS, and Profile.
+   * 9. Intercepts and auto-dismisses session timeout/expiration dialogs.
    */
   const val SESSION_PERSISTENCE_JS = """
     (function() {
       try {
         var PREFIX = '__sti_persisted_session_';
+        var FAR_FUTURE = '; expires=Fri, 31 Dec 2038 23:59:59 GMT; max-age=315360000; path=/; SameSite=Lax';
 
-        // 1. Restore sessionStorage from persistent localStorage across all accounts
-        for (var i = 0; i < localStorage.length; i++) {
-          var k = localStorage.key(i);
-          if (k && k.indexOf(PREFIX) === 0) {
-            var originalKey = k.substring(PREFIX.length);
-            var val = localStorage.getItem(k);
-            if (val !== null && sessionStorage.getItem(originalKey) === null) {
-              sessionStorage.setItem(originalKey, val);
+        // 1. Monkey-patch document.cookie so that session cookies are transformed into 10-year persistent cookies
+        if (!window.__sti_cookie_hooked) {
+          window.__sti_cookie_hooked = true;
+          try {
+            var cookieDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') ||
+                             Object.getOwnPropertyDescriptor(HTMLDocument.prototype, 'cookie');
+            if (cookieDesc && cookieDesc.set) {
+              var origCookieSet = cookieDesc.set;
+              var origCookieGet = cookieDesc.get;
+              Object.defineProperty(document, 'cookie', {
+                get: function() {
+                  return origCookieGet.call(document);
+                },
+                set: function(val) {
+                  try {
+                    if (val && typeof val === 'string') {
+                      var lower = val.toLowerCase();
+                      if (lower.indexOf('max-age=0') === -1 && lower.indexOf('expires=thu, 01 jan 1970') === -1) {
+                        if (lower.indexOf('expires=') === -1 && lower.indexOf('max-age=') === -1) {
+                          val = val.trim() + FAR_FUTURE;
+                        }
+                      }
+                    }
+                  } catch(e) {}
+                  return origCookieSet.call(document, val);
+                },
+                configurable: true
+              });
             }
-          }
+          } catch (e) {}
         }
 
-        // 2. Synchronize current sessionStorage into localStorage across all accounts
-        function syncSession() {
+        // 2. Restore tokens from native Android vault (StiSessionBridge) and localStorage
+        function restoreWebTokens() {
           try {
+            var origin = location.origin || (location.protocol + '//' + location.host);
+            if (window.StiSessionBridge && typeof window.StiSessionBridge.getWebTokens === 'function') {
+              var vaultRaw = window.StiSessionBridge.getWebTokens(origin);
+              if (vaultRaw && vaultRaw !== '{}') {
+                var vaultData = JSON.parse(vaultRaw);
+                for (var vKey in vaultData) {
+                  if (vaultData.hasOwnProperty(vKey)) {
+                    if (sessionStorage.getItem(vKey) === null) {
+                      sessionStorage.setItem(vKey, vaultData[vKey]);
+                    }
+                    if (localStorage.getItem(vKey) === null) {
+                      localStorage.setItem(vKey, vaultData[vKey]);
+                    }
+                  }
+                }
+              }
+            }
+
+            // Restore sessionStorage from localStorage mirrors
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (k && k.indexOf(PREFIX) === 0) {
+                var originalKey = k.substring(PREFIX.length);
+                var val = localStorage.getItem(k);
+                if (val !== null && sessionStorage.getItem(originalKey) === null) {
+                  sessionStorage.setItem(originalKey, val);
+                }
+              }
+            }
+          } catch(e) {}
+        }
+        restoreWebTokens();
+
+        // 3. Synchronize current sessionStorage & localStorage into Native Vault
+        function syncSessionToVault() {
+          try {
+            var dump = {};
             for (var j = 0; j < sessionStorage.length; j++) {
               var sKey = sessionStorage.key(j);
               if (sKey) {
                 var sVal = sessionStorage.getItem(sKey);
                 if (sVal !== null) {
                   localStorage.setItem(PREFIX + sKey, sVal);
+                  dump[sKey] = sVal;
                 }
               }
             }
+            // Include persistent auth tokens from localStorage
+            for (var l = 0; l < localStorage.length; l++) {
+              var lKey = localStorage.key(l);
+              if (lKey && lKey.indexOf(PREFIX) !== 0) {
+                var lVal = localStorage.getItem(lKey);
+                if (lVal !== null) dump[lKey] = lVal;
+              }
+            }
+            var origin = location.origin || (location.protocol + '//' + location.host);
+            if (window.StiSessionBridge && typeof window.StiSessionBridge.saveWebTokens === 'function') {
+              window.StiSessionBridge.saveWebTokens(origin, JSON.stringify(dump));
+            }
           } catch (e) {}
         }
-        syncSession();
+        syncSessionToVault();
 
-        // 3. Intercept sessionStorage updates to keep persistent backup fresh
+        // 4. Intercept sessionStorage updates to keep persistent backup fresh
         if (!window.__sti_session_hooked) {
           window.__sti_session_hooked = true;
           var origSet = sessionStorage.setItem;
           sessionStorage.setItem = function(key, value) {
             origSet.apply(this, arguments);
             try {
-              if (key) localStorage.setItem(PREFIX + key, value);
+              if (key) {
+                localStorage.setItem(PREFIX + key, value);
+                syncSessionToVault();
+              }
             } catch (e) {}
           };
 
@@ -149,14 +238,14 @@ object SessionManager {
             } catch (e) {}
           };
 
-          window.addEventListener('beforeunload', syncSession);
-          window.addEventListener('pagehide', syncSession);
+          window.addEventListener('beforeunload', syncSessionToVault);
+          window.addEventListener('pagehide', syncSessionToVault);
           document.addEventListener('visibilitychange', function() {
-            if (document.visibilityState === 'hidden') syncSession();
+            if (document.visibilityState === 'hidden') syncSessionToVault();
           });
         }
 
-        // 4. Auto-check "Stay signed in", "Remember me", and "Don't show this again" on all login screens
+        // 5. Auto-check "Stay signed in", "Remember me", and "Don't show this again" on all login screens
         var checkSelectors = [
           '#KmsiCheckboxField',
           'input[name="DontShowAgain"]',
@@ -176,7 +265,7 @@ object SessionManager {
           }
         }
 
-        // 5. On Microsoft "Stay signed in?" prompt, confirm with "Yes" so persistent refresh tokens are created
+        // 6. On Microsoft "Stay signed in?" prompt, confirm with "Yes" so persistent refresh tokens are created
         var kmsiPromptTitle = document.getElementById('kmsiTitle') || 
                               document.querySelector('[data-test-id="kmsiText"]') ||
                               document.querySelector('.kmsi-title');
@@ -192,46 +281,44 @@ object SessionManager {
           }, 300);
         }
 
-        // 6. Auto-login if ANY portal or section bounces to a login page (e.g. Schedule, Grades, Ledger, ELMS)
-        // Automatically clicks "Sign in with Microsoft 365" / "Sign in" using existing permanent SSO tokens
-        var loginSelectors = [
-          'a[href*="ExternalLogin"]',
-          'a[href*="OpenIdConnect"]',
-          'a[href*="Microsoft"]',
-          'a[href*="o365"]',
-          'a[href*="O365"]',
-          'a[href*="adfs"]',
-          'button[value="OpenIdConnect"]',
-          'button[name="provider"]',
-          '#btnMicrosoft',
-          '#btnO365',
-          '#btnStudent',
-          '.btn-microsoft',
-          '.btn-o365',
-          '.btn-office365',
-          'input[value*="Office 365"]',
-          'input[value*="Microsoft"]',
-          '.btn-login'
-        ];
-        if (location.pathname && (location.pathname.toLowerCase().indexOf('login') !== -1 || location.pathname.toLowerCase().indexOf('account') !== -1)) {
-          for (var l = 0; l < loginSelectors.length; l++) {
-            var lBtn = document.querySelector(loginSelectors[l]);
+        // 7. Auto-login with Microsoft / SSO only if user is NOT currently typing credentials
+        var isTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+        if (!isTyping && location.pathname && (location.pathname.toLowerCase().indexOf('login') !== -1 || location.pathname.toLowerCase().indexOf('account') !== -1)) {
+          var ssoSelectors = [
+            'a[href*="ExternalLogin"]',
+            'a[href*="OpenIdConnect"]',
+            'a[href*="Microsoft"]',
+            'a[href*="o365"]',
+            'a[href*="O365"]',
+            'button[value="OpenIdConnect"]',
+            'button[name="provider"][value*="Microsoft"]',
+            '#btnMicrosoft',
+            '#btnO365',
+            '.btn-microsoft',
+            '.btn-o365',
+            '.btn-office365'
+          ];
+          for (var l = 0; l < ssoSelectors.length; l++) {
+            var lBtn = document.querySelector(ssoSelectors[l]);
             if (lBtn && !window.__sti_login_clicked) {
               window.__sti_login_clicked = true;
               setTimeout(function() {
-                try { lBtn.click(); } catch(e) {}
-              }, 400);
+                try {
+                  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+                  lBtn.click();
+                } catch(e) {}
+              }, 500);
               break;
             }
           }
         }
 
-        // 7. Universal Anti-Inactivity & Timeout Protection for ALL portals, accounts, and sections:
+        // 8. Universal Anti-Inactivity & Timeout Protection for ALL portals, accounts, and sections:
         // Covers: Class Schedule, Grades, Ledger, Enrollment, Curriculum, Attendance, ELMS, Profile
         if (!window.__sti_keepalive_active) {
           window.__sti_keepalive_active = true;
 
-          // Ping exact current URL for ALL pages every 40 seconds to keep server session active indefinitely
+          // Ping current URL every 25 seconds to keep server session active indefinitely
           setInterval(function() {
             try {
               if (location.href && location.protocol.indexOf('http') === 0) {
@@ -246,13 +333,15 @@ object SessionManager {
                   xhr.send();
                 }
               }
+              if (window.StiSessionBridge && typeof window.StiSessionBridge.heartbeat === 'function') {
+                window.StiSessionBridge.heartbeat(location.origin || '');
+              }
             } catch (e) {}
-          }, 40 * 1000);
+          }, 25 * 1000);
 
-          // Reset all idle timers and simulate user activity every 15 seconds across all screens
+          // Reset all idle timers and simulate user activity every 10 seconds across all screens
           setInterval(function() {
             try {
-              // Reset all known ASP.NET, PHP, and JS idle timeout counters
               if (typeof window.idleTime !== 'undefined') window.idleTime = 0;
               if (typeof window.idleSeconds !== 'undefined') window.idleSeconds = 0;
               if (typeof window.idleSecondsCounter !== 'undefined') window.idleSecondsCounter = 0;
@@ -286,7 +375,7 @@ object SessionManager {
                 }
               }
             } catch (e) {}
-          }, 15 * 1000);
+          }, 10 * 1000);
         }
       } catch (err) {}
     })();
@@ -299,7 +388,7 @@ object SessionManager {
   private fun getFarFutureExpiryDate(): String {
     val sdf = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US)
     sdf.timeZone = TimeZone.getTimeZone("GMT")
-    val futureTime = System.currentTimeMillis() + (FOUR_YEARS_PLUS_SECONDS * 1000L)
+    val futureTime = System.currentTimeMillis() + (TEN_YEARS_SECONDS * 1000L)
     return sdf.format(Date(futureTime))
   }
 
@@ -342,23 +431,25 @@ object SessionManager {
   /**
    * Reads existing cookies, gives them a 10-year expiration date so Chromium's
    * engine marks them as persistent SQLite records instead of in-memory session cookies,
-   * saves a backup in SharedPreferences, and flushes to disk immediately.
-   * Runs in the background to ensure butter-smooth 60/120fps UI scrolling.
+   * saves an encrypted backup in SharedPreferences, and flushes to disk immediately.
+   * Runs sequentially on a dedicated background executor with queue protection.
    */
   fun persistSession(context: Context, currentUrl: String?) {
-    Thread {
+    trackDomain(context, currentUrl)
+
+    if (isPersistQueued) return
+    isPersistQueued = true
+
+    persistExecutor.execute {
+      isPersistQueued = false
       try {
         val cookieManager = CookieManager.getInstance()
         val prefs = getPrefs(context)
         val editor = prefs.edit()
         val expiry = getFarFutureExpiryDate()
 
-        // Track current domain dynamically
-        trackDomain(context, currentUrl)
-
-        val domainsToScan = mutableListOf<String>()
+        val domainsToScan = linkedSetOf<String>()
         if (!currentUrl.isNullOrBlank()) {
-          domainsToScan.add(currentUrl)
           try {
             val uri = Uri.parse(currentUrl)
             val host = uri.host
@@ -367,83 +458,61 @@ object SessionManager {
             }
           } catch (_: Exception) {}
         }
-        domainsToScan.addAll(TRACKED_DOMAINS)
         val dynamicDomains = prefs.getStringSet(KEY_KNOWN_DOMAINS, emptySet()) ?: emptySet()
         domainsToScan.addAll(dynamicDomains)
+        domainsToScan.addAll(TRACKED_DOMAINS)
 
-        val pathsToCheck = listOf(
-          "",
-          "/",
-          "/Student",
-          "/Student/Schedule",
-          "/Student/ClassSchedule",
-          "/Schedule",
-          "/Student/Grades",
-          "/Grades",
-          "/Student/Curriculum",
-          "/Curriculum",
-          "/Student/Ledger",
-          "/Ledger",
-          "/Student/Attendance",
-          "/Attendance",
-          "/Student/Clearance",
-          "/Clearance",
-          "/Student/Profile",
-          "/Profile",
-          "/Enrollment",
-          "/Enrollment/Schedule",
-          "/Registration",
-          "/Courses",
-          "/Account",
-          "/Home",
-          "/adfs",
-          "/adfs/ls",
-          "/common",
-          "/organizations"
-        )
+        for (domain in domainsToScan) {
+          // Check root and /Student path
+          val baseCookie = cookieManager.getCookie(domain)
+          val studentCookie = cookieManager.getCookie(if (domain.endsWith("/")) "${domain}Student" else "$domain/Student")
+          val rawHeader = listOfNotNull(baseCookie, studentCookie).joinToString("; ")
 
-        for (domain in domainsToScan.distinct()) {
-          for (subPath in pathsToCheck) {
-            val scanUrl = if (domain.endsWith("/")) domain.removeSuffix("/") + subPath else domain + subPath
-            val cookieHeader = cookieManager.getCookie(scanUrl)
-            if (!cookieHeader.isNullOrBlank()) {
-              // Backup raw header
-              editor.putString(KEY_COOKIES_PREFIX + domain, cookieHeader)
+          if (rawHeader.isNotBlank()) {
+            editor.putString(KEY_COOKIES_PREFIX + domain, rawHeader)
 
-              // Re-inject each cookie with a 10-year Max-Age and Expires date so Android
-              // Chromium's SQLite database retains it permanently across all accounts
-              val cookies = cookieHeader.split(";")
-              val isHttps = domain.startsWith("https://")
-              val secureFlag = if (isHttps) "; Secure" else ""
+            val cookies = rawHeader.split(";")
+            val isHttps = domain.startsWith("https://")
+            val secureFlag = if (isHttps) "; Secure" else ""
 
-              for (cookie in cookies) {
-                val trimmed = cookie.trim()
-                if (trimmed.isNotEmpty()) {
-                  val nameValue = trimmed.split("=", limit = 2)
-                  if (nameValue.isNotEmpty()) {
-                    val name = nameValue[0].trim()
-                    val value = if (nameValue.size > 1) nameValue[1].trim() else ""
+            for (cookie in cookies) {
+              val trimmed = cookie.trim()
+              if (trimmed.isNotEmpty()) {
+                val nameValue = trimmed.split("=", limit = 2)
+                if (nameValue.isNotEmpty()) {
+                  val name = nameValue[0].trim()
+                  val value = if (nameValue.size > 1) nameValue[1].trim() else ""
 
-                    // 1. Host-specific cookie
-                    val persistentCookieHost = "$name=$value; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
-                    cookieManager.setCookie(domain, persistentCookieHost)
+                  // 1. Host-specific cookie with 10-year persistence
+                  val persistentCookieHost = "$name=$value; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                  cookieManager.setCookie(domain, persistentCookieHost)
 
-                    // 2. Wildcard domain cookies so subdomains share login state seamlessly
-                    val lowerDomain = domain.lowercase()
-                    val rootDomains = mutableListOf<String>()
-                    if (lowerDomain.contains("sti.edu.ph")) rootDomains.add(".sti.edu.ph")
-                    if (lowerDomain.contains("sti.edu")) rootDomains.add(".sti.edu")
-                    if (lowerDomain.contains("microsoftonline.com")) rootDomains.add(".microsoftonline.com")
-                    if (lowerDomain.contains("microsoft.com")) rootDomains.add(".microsoft.com")
-                    if (lowerDomain.contains("live.com")) rootDomains.add(".live.com")
-                    if (lowerDomain.contains("windows.net")) rootDomains.add(".windows.net")
-                    if (lowerDomain.contains("office.com")) rootDomains.add(".office.com")
-                    if (lowerDomain.contains("office365.com")) rootDomains.add(".office365.com")
-                    if (lowerDomain.contains("instructure.com")) rootDomains.add(".instructure.com")
+                  // For HTTPS / SSO third-party authentication contexts (e.g. MSAL silent tokens in iframe)
+                  if (isHttps) {
+                    val persistentCookieNone = "$name=$value; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=None; Secure"
+                    cookieManager.setCookie(domain, persistentCookieNone)
+                  }
 
-                    for (rootDomain in rootDomains.distinct()) {
-                      val persistentCookieDomain = "$name=$value; Domain=$rootDomain; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
-                      cookieManager.setCookie(domain, persistentCookieDomain)
+                  // 2. Wildcard domain cookies
+                  val lowerDomain = domain.lowercase()
+                  val rootDomains = mutableListOf<String>()
+                  if (lowerDomain.contains("sti.edu.ph")) rootDomains.add(".sti.edu.ph")
+                  if (lowerDomain.contains("sti.edu")) rootDomains.add(".sti.edu")
+                  if (lowerDomain.contains("microsoftonline.com")) rootDomains.add(".microsoftonline.com")
+                  if (lowerDomain.contains("microsoft.com")) rootDomains.add(".microsoft.com")
+                  if (lowerDomain.contains("live.com")) rootDomains.add(".live.com")
+                  if (lowerDomain.contains("windows.net")) rootDomains.add(".windows.net")
+                  if (lowerDomain.contains("office.com")) rootDomains.add(".office.com")
+                  if (lowerDomain.contains("office365.com")) rootDomains.add(".office365.com")
+                  if (lowerDomain.contains("instructure.com")) rootDomains.add(".instructure.com")
+                  if (lowerDomain.contains("google.com")) rootDomains.add(".google.com")
+
+                  for (rootDomain in rootDomains.distinct()) {
+                    val persistentCookieDomain = "$name=$value; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                    cookieManager.setCookie(domain, persistentCookieDomain)
+                    if (isHttps) {
+                      val persistentCookieDomainNone = "$name=$value; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=None; Secure"
+                      cookieManager.setCookie(domain, persistentCookieDomainNone)
                     }
                   }
                 }
@@ -456,7 +525,7 @@ object SessionManager {
         editor.apply()
         cookieManager.flush()
       } catch (_: Exception) {}
-    }.start()
+    }
   }
 
   /**
@@ -486,8 +555,13 @@ object SessionManager {
                 val name = nameValue[0].trim()
                 val cookieVal = if (nameValue.size > 1) nameValue[1].trim() else ""
 
-                val persistentCookie = "$name=$cookieVal; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                val persistentCookie = "$name=$cookieVal; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
                 cookieManager.setCookie(domain, persistentCookie)
+
+                if (isHttps) {
+                  val persistentCookieNone = "$name=$cookieVal; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=None; Secure"
+                  cookieManager.setCookie(domain, persistentCookieNone)
+                }
 
                 val lowerDomain = domain.lowercase()
                 val rootDomains = mutableListOf<String>()
@@ -500,10 +574,15 @@ object SessionManager {
                 if (lowerDomain.contains("office.com")) rootDomains.add(".office.com")
                 if (lowerDomain.contains("office365.com")) rootDomains.add(".office365.com")
                 if (lowerDomain.contains("instructure.com")) rootDomains.add(".instructure.com")
+                if (lowerDomain.contains("google.com")) rootDomains.add(".google.com")
 
                 for (rootDomain in rootDomains.distinct()) {
-                  val persistentCookieDomain = "$name=$cookieVal; Domain=$rootDomain; Expires=$expiry; Max-Age=$FOUR_YEARS_PLUS_SECONDS; Path=/; SameSite=Lax$secureFlag"
+                  val persistentCookieDomain = "$name=$cookieVal; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=Lax$secureFlag"
                   cookieManager.setCookie(domain, persistentCookieDomain)
+                  if (isHttps) {
+                    val persistentCookieDomainNone = "$name=$cookieVal; Domain=$rootDomain; Expires=$expiry; Max-Age=$TEN_YEARS_SECONDS; Path=/; SameSite=None; Secure"
+                    cookieManager.setCookie(domain, persistentCookieDomainNone)
+                  }
                 }
               }
             }
@@ -534,7 +613,9 @@ object SessionManager {
       lower.contains("adfs/ls") ||
       lower.contains("microsoftonline.com") ||
       lower.contains("auth") ||
-      lower.contains("oauth")
+      lower.contains("oauth") ||
+      lower.contains("timeout") ||
+      lower.contains("sessionexpired")
     ) {
       return
     }

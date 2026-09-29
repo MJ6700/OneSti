@@ -7,6 +7,9 @@
     <string name="view_cached_portal">View Cached Content</string>
     <string name="offline_banner">Offline Mode • Displaying cached content</string>
     <string name="portal_info_title">About One STI</string>
-    <string name="portal_shortcuts_title">Quick Access</string>
     <string name="back_to_portal">Back to Portal</string>
+    <string name="channel_grades_name">Grade Updates</string>
+    <string name="channel_grades_desc">Instant alerts when new grades or evaluations are posted to your One STI profile</string>
+    <string name="new_grade_title_format">🎓 New Grade: %1$s</string>
+    <string name="new_grade_body_format">%1$s — Grade: %2$s (%3$s)</string>
 </resources>

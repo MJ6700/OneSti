@@ -28,13 +28,16 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Run Unit Tests
+        run: gradle testDebugUnitTest --stacktrace
+
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: One-STI-Student-Portal-APK
+          name: One-STI-Native-App-v2.0-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -43,15 +46,27 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1
-          name: One STI Student Portal v1.1
+          tag_name: v2.0
+          name: One STI Native Android App v2.0
           body: |
-            ## One STI Student Portal App v1.1
-            - Permanent multi-account session persistence (never log out)
-            - Fluid 60/120Hz performance with GPU acceleration
-            - Full offline caching and integrated download manager
-            
-            Download the `app-debug.apk` asset below to install on your Android device.
+            ## 🎓 One STI Native Android App v2.0
+            **Crafted by MJ**
+
+            ### 🚀 What's New in v2.0:
+            - **Full Native Android App Suite:**
+              - 🏠 **Home / Dashboard**: Interactive Virtual Student ID Card with barcode, Today's Class Schedule, Announcements, and quick portal shortcuts.
+              - 📊 **Grades & Evaluations**: Real-time GWA calculator, term breakdowns, and academic standing indicators.
+              - 📅 **Class Schedule**: Day-by-day timetable with room, instructor, and course units.
+              - 💳 **Student Ledger**: Tuition balance tracker, installment due dates, and accredited payment options.
+              - 👤 **Student Profile & Settings**: Account security, 144Hz toggles, and notification testing.
+            - **⚡ 144Hz Ultra-Smooth Mode:** Native high-refresh rate mode selection with minimal input latency and GPU pre-rasterization.
+            - **🔒 Universal Keep-Signed-In Session Vault:** All student, faculty, and Microsoft 365 accounts stay logged in permanently with 10-year persistent cookie transformation and native token vaulting.
+            - **🖤 Solid Black Top & Bottom System Bars:** Modern edge-to-edge styling with crisp white status indicators.
+            - **🔔 Real-Time Grade Release Notifications:** Instant local push alerts with direct deep linking to newly posted grades.
+            - **🌐 Live Multi-Portal Switcher:** One-tap switching between One STI, STI ELMS (Canvas), Microsoft 365, and Student Services (STS).
+
+            ---
+            *Download the `app-debug.apk` asset below to install on your Android device.*
           files: app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -31,5 +31,7 @@ class OneStiApplication : Application() {
     configureGraphicsEnvironment()
     // Initialize session cookies and restore persistent login state early
     SessionManager.initCookieManager(this)
+    // Setup notification channels for grade alerts
+    com.example.notifications.GradeNotificationManager.createNotificationChannel(this)
   }
 }

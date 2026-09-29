@@ -1,6 +1,11 @@
 package com.example
 
 import android.annotation.SuppressLint
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import com.example.bridge.StiGradeBridge
+import com.example.notifications.GradeNotificationManager
 import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
@@ -31,19 +36,24 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,16 +63,28 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import com.example.ui.theme.StiDarkBlue
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
@@ -78,6 +100,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -85,11 +110,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.navigation.AppDestinations
 import com.example.navigation.NavigationTransitions
 import com.example.ui.screens.AboutScreen
-import com.example.ui.screens.ShortcutsScreen
+import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.GradesScreen
+import com.example.ui.screens.ScheduleScreen
+import com.example.ui.screens.LedgerScreen
+import com.example.ui.screens.ProfileScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -127,7 +157,10 @@ private const val SMOOTH_SCROLL_JS = """
     try {
       var s = document.createElement('style');
       s.id = '__sti_smooth_css';
-      s.textContent = '* { -webkit-tap-highlight-color: transparent !important; } html, body { -webkit-overflow-scrolling: touch !important; overscroll-behavior-y: contain !important; } button, a, [role="button"], input, select { touch-action: manipulation !important; }';
+      s.textContent = '* { -webkit-tap-highlight-color: transparent !important; } ' +
+        'html, body { -webkit-overflow-scrolling: touch !important; overscroll-behavior-y: contain !important; scroll-behavior: smooth !important; } ' +
+        'button, a, [role="button"], input, select { touch-action: manipulation !important; } ' +
+        '.page-content, main, .main-content, #content, .container, body { transform: translateZ(0); backface-visibility: hidden; will-change: scroll-position; }';
       (document.head || document.documentElement).appendChild(s);
     } catch(e) {}
   })();
@@ -209,25 +242,65 @@ class MainActivity : ComponentActivity() {
       android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
     )
 
-    // Enable high refresh rate (90Hz / 120Hz) on devices that support it
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      try {
+    // Enable high refresh rate (144Hz / 120Hz / 90Hz) on devices that support it for ultra-smooth experience
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         val display = display
-        val maxMode = display?.supportedModes?.maxByOrNull { it.refreshRate }
-        if (maxMode != null && maxMode.refreshRate > 60f) {
-          window.attributes = window.attributes.apply {
-            preferredDisplayModeId = maxMode.modeId
-          }
+        val modes = display?.supportedModes ?: emptyArray()
+        val currentWidth = display?.mode?.physicalWidth ?: 0
+        val currentHeight = display?.mode?.physicalHeight ?: 0
+
+        // Prioritize highest refresh rate mode (supports 90Hz, 120Hz, 144Hz, 165Hz)
+        val bestMode = modes
+          .filter { it.physicalWidth == currentWidth && it.physicalHeight == currentHeight }
+          .maxByOrNull { it.refreshRate }
+          ?: modes.maxByOrNull { it.refreshRate }
+
+        if (bestMode != null && bestMode.refreshRate > 60f) {
+          val attrs = window.attributes
+          attrs.preferredDisplayModeId = bestMode.modeId
+          attrs.preferredRefreshRate = bestMode.refreshRate
+          window.attributes = attrs
         }
-      } catch (_: Exception) {}
-    }
+        window.setPreferMinimalPostProcessing(true)
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        @Suppress("DEPRECATION")
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+        @Suppress("DEPRECATION")
+        val defaultDisplay = windowManager?.defaultDisplay
+        val modes = defaultDisplay?.supportedModes ?: emptyArray()
+        val maxMode = modes.maxByOrNull { it.refreshRate }
+        if (maxMode != null && maxMode.refreshRate > 60f) {
+          val attrs = window.attributes
+          attrs.preferredDisplayModeId = maxMode.modeId
+          attrs.preferredRefreshRate = maxMode.refreshRate
+          window.attributes = attrs
+        }
+      }
+    } catch (_: Throwable) {}
 
     SessionManager.initCookieManager(this)
-    enableEdgeToEdge()
+    enableEdgeToEdge(
+      statusBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK)
+    )
+    try {
+      WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
+    } catch (_: Exception) {}
     setContent {
       MyApplicationTheme {
-        OneStiNavGraph(onWebViewBound = { activeWebView = it })
+        OneStiNavGraph(
+          onWebViewBound = { activeWebView = it }
+        )
       }
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val targetUrl = intent.getStringExtra(GradeNotificationManager.EXTRA_TARGET_URL)
+    if (!targetUrl.isNullOrBlank()) {
+      activeWebView?.loadUrl(targetUrl)
     }
   }
 
@@ -282,7 +355,8 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Top-level Compose Navigation Graph with smooth slide & fade transitions between screens.
+ * Top-level Compose Navigation Graph with smooth slide & fade transitions between screens
+ * and unified persistent Bottom Navigation Bar.
  */
 @Composable
 fun OneStiNavGraph(
@@ -290,48 +364,226 @@ fun OneStiNavGraph(
 ) {
   val navController = rememberNavController()
   var webViewRef by remember { mutableStateOf<WebView?>(null) }
+  var pendingPortalUrl by remember { mutableStateOf<String?>(null) }
 
-  NavHost(
-    navController = navController,
-    startDestination = AppDestinations.PORTAL,
-    enterTransition = NavigationTransitions.enterFromRight(),
-    exitTransition = NavigationTransitions.exitToLeft(),
-    popEnterTransition = NavigationTransitions.popEnterFromLeft(),
-    popExitTransition = NavigationTransitions.popExitToRight()
-  ) {
-    composable(AppDestinations.PORTAL) {
-      PortalScreen(
-        onWebViewBound = {
-          webViewRef = it
-          onWebViewBound(it)
-        },
-        onNavigateToShortcuts = {
-          navController.navigate(AppDestinations.SHORTCUTS)
-        },
-        onNavigateToAbout = {
-          navController.navigate(AppDestinations.ABOUT)
+  val navBackStackEntry by navController.currentBackStackEntryAsState()
+  val currentRoute = navBackStackEntry?.destination?.route ?: AppDestinations.DASHBOARD
+
+  val showBottomBar = currentRoute in listOf(
+    AppDestinations.DASHBOARD,
+    AppDestinations.GRADES,
+    AppDestinations.SCHEDULE,
+    AppDestinations.LEDGER,
+    AppDestinations.PORTAL
+  )
+
+  Scaffold(
+    containerColor = Color.Black,
+    bottomBar = {
+      if (showBottomBar) {
+        NavigationBar(
+          containerColor = Color.Black,
+          contentColor = Color.White,
+          tonalElevation = 8.dp,
+          modifier = Modifier.testTag("app_bottom_nav_bar")
+        ) {
+          NavigationBarItem(
+            selected = currentRoute == AppDestinations.DASHBOARD,
+            onClick = {
+              if (currentRoute != AppDestinations.DASHBOARD) {
+                navController.navigate(AppDestinations.DASHBOARD) {
+                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
+                  launchSingleTop = true
+                  restoreState = true
+                }
+              }
+            },
+            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+            label = { Text("Home") },
+            colors = NavigationBarItemDefaults.colors(
+              selectedIconColor = StiDarkBlue,
+              selectedTextColor = StiYellow,
+              indicatorColor = StiYellow,
+              unselectedIconColor = Color.White.copy(alpha = 0.6f),
+              unselectedTextColor = Color.White.copy(alpha = 0.6f)
+            ),
+            modifier = Modifier.testTag("nav_item_dashboard")
+          )
+
+          NavigationBarItem(
+            selected = currentRoute == AppDestinations.GRADES,
+            onClick = {
+              if (currentRoute != AppDestinations.GRADES) {
+                navController.navigate(AppDestinations.GRADES) {
+                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
+                  launchSingleTop = true
+                  restoreState = true
+                }
+              }
+            },
+            icon = { Icon(Icons.Default.Assessment, contentDescription = "Grades") },
+            label = { Text("Grades") },
+            colors = NavigationBarItemDefaults.colors(
+              selectedIconColor = StiDarkBlue,
+              selectedTextColor = StiYellow,
+              indicatorColor = StiYellow,
+              unselectedIconColor = Color.White.copy(alpha = 0.6f),
+              unselectedTextColor = Color.White.copy(alpha = 0.6f)
+            ),
+            modifier = Modifier.testTag("nav_item_grades")
+          )
+
+          NavigationBarItem(
+            selected = currentRoute == AppDestinations.SCHEDULE,
+            onClick = {
+              if (currentRoute != AppDestinations.SCHEDULE) {
+                navController.navigate(AppDestinations.SCHEDULE) {
+                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
+                  launchSingleTop = true
+                  restoreState = true
+                }
+              }
+            },
+            icon = { Icon(Icons.Default.CalendarMonth, contentDescription = "Schedule") },
+            label = { Text("Schedule") },
+            colors = NavigationBarItemDefaults.colors(
+              selectedIconColor = StiDarkBlue,
+              selectedTextColor = StiYellow,
+              indicatorColor = StiYellow,
+              unselectedIconColor = Color.White.copy(alpha = 0.6f),
+              unselectedTextColor = Color.White.copy(alpha = 0.6f)
+            ),
+            modifier = Modifier.testTag("nav_item_schedule")
+          )
+
+          NavigationBarItem(
+            selected = currentRoute == AppDestinations.LEDGER,
+            onClick = {
+              if (currentRoute != AppDestinations.LEDGER) {
+                navController.navigate(AppDestinations.LEDGER) {
+                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
+                  launchSingleTop = true
+                  restoreState = true
+                }
+              }
+            },
+            icon = { Icon(Icons.Default.AccountBalance, contentDescription = "Ledger") },
+            label = { Text("Ledger") },
+            colors = NavigationBarItemDefaults.colors(
+              selectedIconColor = StiDarkBlue,
+              selectedTextColor = StiYellow,
+              indicatorColor = StiYellow,
+              unselectedIconColor = Color.White.copy(alpha = 0.6f),
+              unselectedTextColor = Color.White.copy(alpha = 0.6f)
+            ),
+            modifier = Modifier.testTag("nav_item_ledger")
+          )
+
+          NavigationBarItem(
+            selected = currentRoute == AppDestinations.PORTAL,
+            onClick = {
+              if (currentRoute != AppDestinations.PORTAL) {
+                navController.navigate(AppDestinations.PORTAL) {
+                  popUpTo(AppDestinations.DASHBOARD) { saveState = true }
+                  launchSingleTop = true
+                  restoreState = true
+                }
+              }
+            },
+            icon = { Icon(Icons.Default.Language, contentDescription = "Live Portal") },
+            label = { Text("Portal") },
+            colors = NavigationBarItemDefaults.colors(
+              selectedIconColor = StiDarkBlue,
+              selectedTextColor = StiYellow,
+              indicatorColor = StiYellow,
+              unselectedIconColor = Color.White.copy(alpha = 0.6f),
+              unselectedTextColor = Color.White.copy(alpha = 0.6f)
+            ),
+            modifier = Modifier.testTag("nav_item_portal")
+          )
         }
-      )
+      }
     }
+  ) { innerPadding ->
+    NavHost(
+      navController = navController,
+      startDestination = AppDestinations.DASHBOARD,
+      modifier = Modifier.padding(innerPadding),
+      enterTransition = NavigationTransitions.enterFromRight(),
+      exitTransition = NavigationTransitions.exitToLeft(),
+      popEnterTransition = NavigationTransitions.popEnterFromLeft(),
+      popExitTransition = NavigationTransitions.popExitToRight()
+    ) {
+      composable(AppDestinations.DASHBOARD) {
+        DashboardScreen(
+          onNavigateToGrades = { navController.navigate(AppDestinations.GRADES) },
+          onNavigateToSchedule = { navController.navigate(AppDestinations.SCHEDULE) },
+          onNavigateToLedger = { navController.navigate(AppDestinations.LEDGER) },
+          onNavigateToPortal = { url ->
+            pendingPortalUrl = url
+            navController.navigate(AppDestinations.PORTAL)
+          },
+          onNavigateToProfile = { navController.navigate(AppDestinations.PROFILE) }
+        )
+      }
 
-    composable(AppDestinations.SHORTCUTS) {
-      ShortcutsScreen(
-        onNavigateBack = {
-          navController.popBackStack()
-        },
-        onOpenUrl = { url ->
-          webViewRef?.loadUrl(url)
-          navController.popBackStack()
-        }
-      )
-    }
+      composable(AppDestinations.GRADES) {
+        GradesScreen(
+          onNavigateBack = { navController.popBackStack() },
+          onOpenLivePortal = {
+            pendingPortalUrl = "https://one.sti.edu/Student/Grades"
+            navController.navigate(AppDestinations.PORTAL)
+          }
+        )
+      }
 
-    composable(AppDestinations.ABOUT) {
-      AboutScreen(
-        onNavigateBack = {
-          navController.popBackStack()
-        }
-      )
+      composable(AppDestinations.SCHEDULE) {
+        ScheduleScreen(
+          onNavigateBack = { navController.popBackStack() },
+          onOpenLivePortal = {
+            pendingPortalUrl = "https://one.sti.edu/Student/ClassSchedule"
+            navController.navigate(AppDestinations.PORTAL)
+          }
+        )
+      }
+
+      composable(AppDestinations.LEDGER) {
+        LedgerScreen(
+          onNavigateBack = { navController.popBackStack() },
+          onOpenLivePortal = {
+            pendingPortalUrl = "https://one.sti.edu/Student/Ledger"
+            navController.navigate(AppDestinations.PORTAL)
+          }
+        )
+      }
+
+      composable(AppDestinations.PORTAL) {
+        PortalScreen(
+          initialUrlOverride = pendingPortalUrl,
+          onWebViewBound = {
+            webViewRef = it
+            onWebViewBound(it)
+          },
+          onNavigateToAbout = {
+            navController.navigate(AppDestinations.ABOUT)
+          }
+        )
+      }
+
+      composable(AppDestinations.PROFILE) {
+        ProfileScreen(
+          onNavigateBack = { navController.popBackStack() },
+          onNavigateToAbout = { navController.navigate(AppDestinations.ABOUT) }
+        )
+      }
+
+      composable(AppDestinations.ABOUT) {
+        AboutScreen(
+          onNavigateBack = {
+            navController.popBackStack()
+          }
+        )
+      }
     }
   }
 }
@@ -346,8 +598,8 @@ fun OneStiApp(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortalScreen(
+  initialUrlOverride: String? = null,
   onWebViewBound: (WebView) -> Unit = {},
-  onNavigateToShortcuts: () -> Unit = {},
   onNavigateToAbout: () -> Unit = {}
 ) {
   val context = LocalContext.current
@@ -375,13 +627,35 @@ fun PortalScreen(
     }
   }
 
-  // Periodic background session flush every 20 seconds to guarantee all accounts stay logged in permanently
+  // Request POST_NOTIFICATIONS permission on Android 13+ (API 33+)
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+      contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    LaunchedEffect(Unit) {
+      if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+      }
+    }
+  }
+
+  // Periodic background session flush every 15 seconds to guarantee all accounts stay logged in permanently
   LaunchedEffect(Unit) {
     while (true) {
-      kotlinx.coroutines.delay(20_000L)
+      kotlinx.coroutines.delay(15_000L)
       webViewInstance?.let { wv ->
         SessionManager.persistSession(context, wv.url)
+        wv.evaluateJavascript(SessionManager.SESSION_PERSISTENCE_JS, null)
       }
+    }
+  }
+
+  // Periodic grade evaluation check while app is active
+  LaunchedEffect(Unit) {
+    while (true) {
+      kotlinx.coroutines.delay(45_000L)
+      webViewInstance?.evaluateJavascript(StiGradeBridge.GRADE_MONITOR_JS, null)
     }
   }
 
@@ -430,7 +704,17 @@ fun PortalScreen(
     }
   }
 
-  val initialUrl = remember { SessionManager.getLastValidUrl(context, ONE_STI_URL) }
+  val activity = context as? Activity
+  val deepLinkUrl = remember { activity?.intent?.getStringExtra(GradeNotificationManager.EXTRA_TARGET_URL) }
+  val initialUrl = remember(initialUrlOverride) {
+    initialUrlOverride ?: deepLinkUrl ?: SessionManager.getLastValidUrl(context, ONE_STI_URL)
+  }
+
+  LaunchedEffect(initialUrlOverride) {
+    if (!initialUrlOverride.isNullOrBlank()) {
+      webViewInstance?.loadUrl(initialUrlOverride)
+    }
+  }
 
   val animatedProgress by animateFloatAsState(
     targetValue = if (isLoading) loadProgress.coerceIn(0.08f, 1f) else 1f,
@@ -439,14 +723,151 @@ fun PortalScreen(
   )
 
   Scaffold(
-    contentWindowInsets = WindowInsets.safeDrawing
+    containerColor = Color.Black,
+    contentWindowInsets = WindowInsets(0, 0, 0, 0)
   ) { innerPadding ->
-    Box(
+    Column(
       modifier = Modifier
         .fillMaxSize()
         .padding(innerPadding)
     ) {
-      OneStiWebViewContainer(
+      // Sleek solid Black Top Bar matching status bar height
+      Spacer(
+        modifier = Modifier
+          .fillMaxWidth()
+          .windowInsetsTopHeight(WindowInsets.statusBars)
+          .background(Color.Black)
+      )
+
+      // Live Portal Header & Quick Links
+      Surface(
+        color = Color.Black,
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Text(
+                text = "ONE STI LIVE PORTAL",
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 15.sp,
+                letterSpacing = 0.5.sp
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = StiYellow
+              ) {
+                Text(
+                  text = "LIVE",
+                  color = StiDarkBlue,
+                  fontSize = 9.sp,
+                  fontWeight = FontWeight.Black,
+                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                )
+              }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              IconButton(
+                onClick = { webViewInstance?.reload() },
+                modifier = Modifier.size(36.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Refresh,
+                  contentDescription = "Reload",
+                  tint = Color.White,
+                  modifier = Modifier.size(20.dp)
+                )
+              }
+              IconButton(
+                onClick = onNavigateToAbout,
+                modifier = Modifier.size(36.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Info,
+                  contentDescription = "About",
+                  tint = StiYellow,
+                  modifier = Modifier.size(20.dp)
+                )
+              }
+            }
+          }
+
+          // Quick Chips for STI Portals
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            val currentWebUrl = webViewInstance?.url.orEmpty()
+            Surface(
+              shape = RoundedCornerShape(8.dp),
+              color = if (currentWebUrl.contains("one.sti") || currentWebUrl.isEmpty()) StiBlue else Color(0xFF1E293B),
+              modifier = Modifier
+                .weight(1f)
+                .clickable { webViewInstance?.loadUrl("https://one.sti.edu") }
+            ) {
+              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                Text("One STI", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(8.dp),
+              color = if (currentWebUrl.contains("elms")) StiBlue else Color(0xFF1E293B),
+              modifier = Modifier
+                .weight(1f)
+                .clickable { webViewInstance?.loadUrl("https://elms.sti.edu") }
+            ) {
+              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                Text("ELMS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(8.dp),
+              color = if (currentWebUrl.contains("office") || currentWebUrl.contains("microsoft")) StiBlue else Color(0xFF1E293B),
+              modifier = Modifier
+                .weight(1f)
+                .clickable { webViewInstance?.loadUrl("https://portal.office.com") }
+            ) {
+              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                Text("M365", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(8.dp),
+              color = if (currentWebUrl.contains("sts.sti")) StiBlue else Color(0xFF1E293B),
+              modifier = Modifier
+                .weight(1f)
+                .clickable { webViewInstance?.loadUrl("https://sts.sti.edu") }
+            ) {
+              Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+                Text("STS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(4.dp))
+        }
+      }
+
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .weight(1f)
+          .windowInsetsPadding(WindowInsets.navigationBars)
+      ) {
+        OneStiWebViewContainer(
         url = initialUrl,
         isRefreshing = isPullRefreshing,
         isOnline = isOnline,
@@ -498,7 +919,7 @@ fun PortalScreen(
       )
 
       // Thin loading indicator at the very top of the page
-      AnimatedVisibility(
+      androidx.compose.animation.AnimatedVisibility(
         visible = isLoading && !hasError,
         enter = fadeIn(animationSpec = tween(150)),
         exit = fadeOut(animationSpec = tween(250)),
@@ -515,7 +936,7 @@ fun PortalScreen(
       }
 
       // Subtle offline mode banner when viewing cached content without error
-      AnimatedVisibility(
+      androidx.compose.animation.AnimatedVisibility(
         visible = !isOnline && !hasError,
         enter = fadeIn(),
         exit = fadeOut(),
@@ -571,20 +992,20 @@ fun PortalScreen(
               modifier = Modifier
                 .size(88.dp)
                 .clip(CircleShape)
-                .background(StiBlue.copy(alpha = 0.12f)),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
               contentAlignment = Alignment.Center
             ) {
               Box(
                 modifier = Modifier
                   .size(68.dp)
                   .clip(CircleShape)
-                  .background(StiBlue.copy(alpha = 0.18f)),
+                  .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center
               ) {
                 Icon(
                   imageVector = Icons.Default.WifiOff,
                   contentDescription = stringResource(R.string.no_internet_title),
-                  tint = StiBlue,
+                  tint = MaterialTheme.colorScheme.primary,
                   modifier = Modifier.size(38.dp)
                 )
               }
@@ -624,7 +1045,7 @@ fun PortalScreen(
               text = stringResource(R.string.no_internet_title),
               style = MaterialTheme.typography.titleLarge,
               fontWeight = FontWeight.Bold,
-              color = StiBlue,
+              color = MaterialTheme.colorScheme.primary,
               textAlign = TextAlign.Center
             )
 
@@ -652,7 +1073,7 @@ fun PortalScreen(
                   text = "Troubleshooting Tips:",
                   style = MaterialTheme.typography.labelLarge,
                   fontWeight = FontWeight.SemiBold,
-                  color = StiBlue
+                  color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
@@ -675,8 +1096,8 @@ fun PortalScreen(
                 webViewInstance?.reload()
               },
               colors = ButtonDefaults.buttonColors(
-                containerColor = StiBlue,
-                contentColor = Color.White
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
               ),
               shape = RoundedCornerShape(12.dp),
               modifier = Modifier
@@ -686,7 +1107,7 @@ fun PortalScreen(
             ) {
               if (isRetrying && isLoading) {
                 CircularProgressIndicator(
-                  color = Color.White,
+                  color = MaterialTheme.colorScheme.onPrimary,
                   modifier = Modifier.size(18.dp),
                   strokeWidth = 2.dp
                 )
@@ -722,9 +1143,9 @@ fun PortalScreen(
                 .height(48.dp)
                 .testTag("network_settings_button")
             ) {
-              Icon(imageVector = Icons.Default.Settings, contentDescription = null, tint = StiBlue)
+              Icon(imageVector = Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
               Spacer(modifier = Modifier.size(8.dp))
-              Text(stringResource(R.string.network_settings), color = StiBlue)
+              Text(stringResource(R.string.network_settings), color = MaterialTheme.colorScheme.primary)
             }
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -738,9 +1159,9 @@ fun PortalScreen(
               },
               modifier = Modifier.testTag("view_cached_button")
             ) {
-              Icon(imageVector = Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(18.dp), tint = StiBlue)
+              Icon(imageVector = Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
               Spacer(modifier = Modifier.size(6.dp))
-              Text(stringResource(R.string.view_cached_portal), color = StiBlue)
+              Text(stringResource(R.string.view_cached_portal), color = MaterialTheme.colorScheme.primary)
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -756,6 +1177,7 @@ fun PortalScreen(
       }
     }
   }
+}
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -776,6 +1198,7 @@ fun OneStiWebViewContainer(
   modifier: Modifier = Modifier
 ) {
   val context = LocalContext.current
+  var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
   DisposableEffect(Unit) {
     onDispose {
@@ -788,6 +1211,7 @@ fun OneStiWebViewContainer(
     modifier = modifier,
     factory = { ctx ->
       val webView = WebView(ctx).apply {
+        webViewRef = this
         layoutParams = ViewGroup.LayoutParams(
           ViewGroup.LayoutParams.MATCH_PARENT,
           ViewGroup.LayoutParams.MATCH_PARENT
@@ -797,6 +1221,15 @@ fun OneStiWebViewContainer(
         SessionManager.initCookieManager(ctx, this)
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptThirdPartyCookies(this, true)
+
+        // Inject StiGradeBridge to monitor and detect newly posted student grades
+        addJavascriptInterface(StiGradeBridge(ctx), StiGradeBridge.BRIDGE_NAME)
+
+        // Inject StiSessionBridge to vault Web Storage tokens natively and ensure no account logs out
+        addJavascriptInterface(com.example.bridge.StiSessionBridge(ctx), com.example.bridge.StiSessionBridge.BRIDGE_NAME)
+
+        // Clean white background for standard One STI portal
+        setBackgroundColor(android.graphics.Color.WHITE)
 
         // Disable intermediate offscreen layer to enable direct hardware GPU compositing
         setLayerType(View.LAYER_TYPE_NONE, null)
@@ -848,9 +1281,20 @@ fun OneStiWebViewContainer(
             isUserGesture: Boolean,
             resultMsg: android.os.Message?
           ): Boolean {
+            val windowCtx = view?.context ?: return false
+            val tempWebView = WebView(windowCtx)
+            tempWebView.webViewClient = object : WebViewClient() {
+              override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
+                val targetUrl = request?.url?.toString()
+                if (!targetUrl.isNullOrBlank()) {
+                  view?.loadUrl(targetUrl)
+                }
+                return true
+              }
+            }
             val transport = resultMsg?.obj as? WebView.WebViewTransport
-            if (transport != null && view != null) {
-              transport.webView = view
+            if (transport != null) {
+              transport.webView = tempWebView
               resultMsg.sendToTarget()
               return true
             }
@@ -886,6 +1330,7 @@ fun OneStiWebViewContainer(
             super.onPageCommitVisible(view, url)
             onLoadingChanged(false)
             view?.evaluateJavascript(SMOOTH_SCROLL_JS, null)
+            view?.evaluateJavascript(StiGradeBridge.GRADE_MONITOR_JS, null)
           }
 
           override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -912,6 +1357,7 @@ fun OneStiWebViewContainer(
             SessionManager.trackDomain(ctx, url)
             view?.evaluateJavascript(SMOOTH_SCROLL_JS, null)
             view?.evaluateJavascript(SessionManager.SESSION_PERSISTENCE_JS, null)
+            view?.evaluateJavascript(StiGradeBridge.GRADE_MONITOR_JS, null)
             SessionManager.persistSession(ctx, url)
             SessionManager.saveLastValidUrl(ctx, url)
           }
@@ -937,6 +1383,18 @@ fun OneStiWebViewContainer(
               } catch (_: Exception) {
                 true
               }
+            }
+
+            // Protect against automatic inactivity/session timeout forced logouts
+            val urlStr = targetUri.toString()
+            val lower = urlStr.lowercase()
+            if (lower.contains("timeout") || lower.contains("sessionexpired") ||
+                lower.contains("session-expired") || lower.contains("sessionended") ||
+                lower.contains("inactivity")) {
+              SessionManager.restoreCookies(ctx)
+              val resumeUrl = SessionManager.getLastValidUrl(ctx, ONE_STI_URL)
+              view?.loadUrl(resumeUrl)
+              return true
             }
 
             // Normal web links, SSO login pages, and student portal stay within the app's WebView
@@ -1019,12 +1477,11 @@ fun OneStiWebViewContainer(
           ViewGroup.LayoutParams.MATCH_PARENT,
           ViewGroup.LayoutParams.MATCH_PARENT
         )
-        // STI Blue (#005596) and STI Yellow (#FFD100)
-        setColorSchemeColors(
-          android.graphics.Color.parseColor("#005596"),
-          android.graphics.Color.parseColor("#FFD100")
-        )
-        setProgressBackgroundColorSchemeColor(android.graphics.Color.WHITE)
+        val primaryCol = android.graphics.Color.parseColor("#005596")
+        val secondaryCol = android.graphics.Color.parseColor("#FFD100")
+        val bgCol = android.graphics.Color.WHITE
+        setColorSchemeColors(primaryCol, secondaryCol)
+        setProgressBackgroundColorSchemeColor(bgCol)
         setDistanceToTriggerSync(320)
 
         // Only allow pull-to-refresh if the WebView is at the top of the content without scroll conflicts
@@ -1043,6 +1500,12 @@ fun OneStiWebViewContainer(
     },
     update = { swipeRefresh ->
       swipeRefresh.isRefreshing = isRefreshing
+      val primaryCol = android.graphics.Color.parseColor("#005596")
+      val secondaryCol = android.graphics.Color.parseColor("#FFD100")
+      val bgCol = android.graphics.Color.WHITE
+      swipeRefresh.setColorSchemeColors(primaryCol, secondaryCol)
+      swipeRefresh.setProgressBackgroundColorSchemeColor(bgCol)
+
       val webView = swipeRefresh.getChildAt(0) as? WebView
       val targetCacheMode = if (isOnline) {
         WebSettings.LOAD_DEFAULT
