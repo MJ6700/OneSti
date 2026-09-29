@@ -891,10 +891,18 @@ fun OneStiWebViewContainer(
         // Clean white background for standard One STI portal
         setBackgroundColor(android.graphics.Color.WHITE)
 
-        // Disable nested scrolling on WebView so Chromium's internal compositor thread
-        // handles touch drags, flings, and smooth momentum scrolling at full 60/120Hz
-        isNestedScrollingEnabled = false
-        isScrollContainer = true
+        // Ensure touch, click, and keyboard focus are explicitly active
+        isClickable = true
+        isFocusable = true
+        isFocusableInTouchMode = true
+        setOnTouchListener { v, event ->
+          if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+            v.requestFocus()
+          }
+          false
+        }
+
+        // Configure scroll bars and overscroll
         isVerticalScrollBarEnabled = false
         isHorizontalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
@@ -903,8 +911,6 @@ fun OneStiWebViewContainer(
         settings.apply {
           javaScriptEnabled = true
           domStorageEnabled = true
-          databaseEnabled = true
-          saveFormData = true
           cacheMode = if (isOnline) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_CACHE_ELSE_NETWORK
           allowFileAccess = false
           allowContentAccess = true
@@ -914,13 +920,13 @@ fun OneStiWebViewContainer(
           useWideViewPort = true
           loadWithOverviewMode = true
           mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-          setSupportMultipleWindows(true)
+          // Disable separate window popups so Microsoft SSO and One STI sign-in open directly in this WebView
+          setSupportMultipleWindows(false)
           javaScriptCanOpenWindowsAutomatically = true
 
           // Optimize layout and rendering pipeline for responsive student portal browsing
           mediaPlaybackRequiresUserGesture = false
           offscreenPreRaster = true // Pre-renders out-of-viewport tiles for smooth scrolling
-          setRenderPriority(WebSettings.RenderPriority.HIGH)
 
           // Optimize user agent string so Google/Microsoft OAuth does not reject with disallowed_useragent
           // and treats the session as a persistent browser rather than a transient in-app webview
@@ -930,33 +936,8 @@ fun OneStiWebViewContainer(
             .replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
         }
 
-        // WebChromeClient for progress, title, multiple windows, and file upload support
+        // WebChromeClient for progress, title, and file upload support
         webChromeClient = object : WebChromeClient() {
-          override fun onCreateWindow(
-            view: WebView?,
-            isDialog: Boolean,
-            isUserGesture: Boolean,
-            resultMsg: android.os.Message?
-          ): Boolean {
-            val windowCtx = view?.context ?: return false
-            val tempWebView = WebView(windowCtx)
-            tempWebView.webViewClient = object : WebViewClient() {
-              override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
-                val targetUrl = request?.url?.toString()
-                if (!targetUrl.isNullOrBlank()) {
-                  view?.loadUrl(targetUrl)
-                }
-                return true
-              }
-            }
-            val transport = resultMsg?.obj as? WebView.WebViewTransport
-            if (transport != null) {
-              transport.webView = tempWebView
-              resultMsg.sendToTarget()
-              return true
-            }
-            return false
-          }
 
           override fun onProgressChanged(view: WebView?, newProgress: Int) {
             onProgressChanged(newProgress / 100f)

@@ -281,44 +281,12 @@ object SessionManager {
           }, 300);
         }
 
-        // 7. Auto-login with Microsoft / SSO only if user is NOT currently typing credentials
-        var isTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
-        if (!isTyping && location.pathname && (location.pathname.toLowerCase().indexOf('login') !== -1 || location.pathname.toLowerCase().indexOf('account') !== -1)) {
-          var ssoSelectors = [
-            'a[href*="ExternalLogin"]',
-            'a[href*="OpenIdConnect"]',
-            'a[href*="Microsoft"]',
-            'a[href*="o365"]',
-            'a[href*="O365"]',
-            'button[value="OpenIdConnect"]',
-            'button[name="provider"][value*="Microsoft"]',
-            '#btnMicrosoft',
-            '#btnO365',
-            '.btn-microsoft',
-            '.btn-o365',
-            '.btn-office365'
-          ];
-          for (var l = 0; l < ssoSelectors.length; l++) {
-            var lBtn = document.querySelector(ssoSelectors[l]);
-            if (lBtn && !window.__sti_login_clicked) {
-              window.__sti_login_clicked = true;
-              setTimeout(function() {
-                try {
-                  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-                  lBtn.click();
-                } catch(e) {}
-              }, 500);
-              break;
-            }
-          }
-        }
-
-        // 8. Universal Anti-Inactivity & Timeout Protection for ALL portals, accounts, and sections:
-        // Covers: Class Schedule, Grades, Ledger, Enrollment, Curriculum, Attendance, ELMS, Profile
+        // 7. Universal Anti-Inactivity & Timeout Protection:
+        // Keeps sessions active indefinitely using background server heartbeats and idle resets
         if (!window.__sti_keepalive_active) {
           window.__sti_keepalive_active = true;
 
-          // Ping current URL every 25 seconds to keep server session active indefinitely
+          // Ping current URL every 25 seconds with session credentials
           setInterval(function() {
             try {
               if (location.href && location.protocol.indexOf('http') === 0) {
@@ -339,7 +307,7 @@ object SessionManager {
             } catch (e) {}
           }, 25 * 1000);
 
-          // Reset all idle timers and simulate user activity every 10 seconds across all screens
+          // Reset all idle timers every 15 seconds safely without interfering with user touches
           setInterval(function() {
             try {
               if (typeof window.idleTime !== 'undefined') window.idleTime = 0;
@@ -353,29 +321,8 @@ object SessionManager {
               if (typeof window.resetSessionTimer === 'function') window.resetSessionTimer();
               if (typeof window.keepAlive === 'function') window.keepAlive();
               if (typeof window.resetIdleTimeout === 'function') window.resetIdleTimeout();
-
-              // Auto-dismiss or click "Extend Session" / "Stay Logged In" on any timeout modals
-              var extendBtns = document.querySelectorAll(
-                'button[id*="extend"], button[id*="Extend"], button[class*="extend"],' +
-                'button[id*="stay"], button[class*="stay"], button[id*="continue"],' +
-                'button[id*="keep"], .btn-extend-session, .btn-stay-signed-in,' +
-                'a[id*="extend"], a[class*="extend"], a[id*="stay"], a[class*="stay"]'
-              );
-              for (var b = 0; b < extendBtns.length; b++) {
-                try { extendBtns[b].click(); } catch(e) {}
-              }
-
-              // Dispatch real interaction events to document, window, and body
-              var eventTypes = ['mousemove', 'mousedown', 'touchstart', 'scroll', 'keydown'];
-              for (var ev = 0; ev < eventTypes.length; ev++) {
-                document.dispatchEvent(new Event(eventTypes[ev], { bubbles: true }));
-                window.dispatchEvent(new Event(eventTypes[ev], { bubbles: true }));
-                if (document.body) {
-                  document.body.dispatchEvent(new Event(eventTypes[ev], { bubbles: true }));
-                }
-              }
             } catch (e) {}
-          }, 10 * 1000);
+          }, 15 * 1000);
         }
       } catch (err) {}
     })();
