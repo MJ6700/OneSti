@@ -3,6 +3,7 @@ package com.example.bridge
 import android.content.Context
 import android.content.SharedPreferences
 import android.webkit.JavascriptInterface
+import com.example.SessionManager
 import org.json.JSONObject
 
 /**
@@ -55,9 +56,12 @@ class StiSessionBridge(private val context: Context) {
 
   /**
    * Called by JavaScript periodically as an anti-inactivity heartbeat.
+   * Flushes and permanently vaults current session cookies to native storage.
    */
   @JavascriptInterface
   fun heartbeat(origin: String) {
-    // Keep-alive heartbeat recorded
+    try {
+      SessionManager.persistSession(context, origin)
+    } catch (_: Throwable) {}
   }
 }

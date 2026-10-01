@@ -19,8 +19,8 @@ object NavigationTransitions {
   private val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f)
   private val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f)
 
-  private const val ENTER_DURATION = 300
-  private const val EXIT_DURATION = 250
+  private const val ENTER_DURATION = 160
+  private const val EXIT_DURATION = 140
 
   /**
    * Smooth horizontal slide into view from the right with subtle fade.

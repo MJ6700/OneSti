@@ -321,8 +321,55 @@ object SessionManager {
               if (typeof window.resetSessionTimer === 'function') window.resetSessionTimer();
               if (typeof window.keepAlive === 'function') window.keepAlive();
               if (typeof window.resetIdleTimeout === 'function') window.resetIdleTimeout();
+
+              // Passive user activity heartbeat to perpetually prevent session timeout
+              window.dispatchEvent(new Event('focus'));
+              document.dispatchEvent(new Event('mousemove'));
             } catch (e) {}
           }, 15 * 1000);
+
+          // Auto-confirm session extension modal dialogs
+          setInterval(function() {
+            try {
+              var extendButtons = document.querySelectorAll('button, a, input[type="button"]');
+              for (var b = 0; b < extendButtons.length; b++) {
+                var btnText = (extendButtons[b].innerText || extendButtons[b].value || '').toLowerCase();
+                if (btnText.indexOf('stay signed in') !== -1 || btnText.indexOf('continue session') !== -1 ||
+                    btnText.indexOf('extend session') !== -1 || btnText.indexOf('keep me logged in') !== -1 ||
+                    btnText.indexOf('still here') !== -1 || btnText.indexOf('renew session') !== -1) {
+                  extendButtons[b].click();
+                }
+              }
+            } catch(e) {}
+          }, 5000);
+
+          // Intercept client-side scripted redirects to timeout/inactivity endpoints
+          try {
+            var origAssign = window.location.assign;
+            if (origAssign) {
+              window.location.assign = function(url) {
+                if (url && typeof url === 'string') {
+                  var low = url.toLowerCase();
+                  if (low.indexOf('timeout') !== -1 || low.indexOf('sessionexpired') !== -1 || low.indexOf('inactivity') !== -1) {
+                    return;
+                  }
+                }
+                return origAssign.apply(window.location, arguments);
+              };
+            }
+            var origReplace = window.location.replace;
+            if (origReplace) {
+              window.location.replace = function(url) {
+                if (url && typeof url === 'string') {
+                  var low = url.toLowerCase();
+                  if (low.indexOf('timeout') !== -1 || low.indexOf('sessionexpired') !== -1 || low.indexOf('inactivity') !== -1) {
+                    return;
+                  }
+                }
+                return origReplace.apply(window.location, arguments);
+              };
+            }
+          } catch(e) {}
         }
       } catch (err) {}
     })();

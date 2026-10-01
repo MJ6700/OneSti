@@ -21,6 +21,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.view.KeyEvent
+import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -137,16 +138,57 @@ private const val ONE_STI_URL = "https://one.sti.edu/"
 
 private const val SMOOTH_SCROLL_JS = """
   (function() {
-    if (window.__sti_smooth_applied) return;
-    window.__sti_smooth_applied = true;
+    if (window.__sti_144fps_applied) return;
+    window.__sti_144fps_applied = true;
     try {
+      // 1. Force passive touch listeners for zero-delay 144fps touch dispatch without main thread blocking
+      var origAdd = EventTarget.prototype.addEventListener;
+      EventTarget.prototype.addEventListener = function(type, listener, options) {
+        if (type === 'touchstart' || type === 'touchmove' || type === 'wheel') {
+          if (typeof options === 'boolean') {
+            options = { capture: options, passive: true };
+          } else if (typeof options === 'object' && options !== null) {
+            if (options.passive === undefined) options.passive = true;
+          } else {
+            options = { passive: true };
+          }
+        }
+        return origAdd.call(this, type, listener, options);
+      };
+
+      // 2. Hardware GPU composited CSS for instant touch response and 144Hz scrolling
       var s = document.createElement('style');
-      s.id = '__sti_smooth_css';
-      s.textContent = '* { -webkit-tap-highlight-color: transparent !important; } ' +
-        'html, body { -webkit-overflow-scrolling: touch !important; overscroll-behavior-y: contain !important; scroll-behavior: smooth !important; } ' +
-        'button, a, [role="button"], input, select { touch-action: manipulation !important; } ' +
-        '.page-content, main, .main-content, #content, .container, body { transform: translateZ(0); backface-visibility: hidden; will-change: scroll-position; }';
+      s.id = '__sti_144fps_css';
+      s.textContent = 
+        '* { -webkit-tap-highlight-color: transparent !important; } ' +
+        'html, body { ' +
+        '  -webkit-overflow-scrolling: touch !important; ' +
+        '  overscroll-behavior-y: contain !important; ' +
+        '  scroll-behavior: auto !important; ' +
+        '} ' +
+        'button, a, [role="button"], input, select, .btn, .card { ' +
+        '  touch-action: manipulation !important; ' +
+        '} ' +
+        '.page-content, main, .main-content, #content, .container, body, nav, header { ' +
+        '  transform: translateZ(0); ' +
+        '  backface-visibility: hidden; ' +
+        '}';
       (document.head || document.documentElement).appendChild(s);
+
+      // 3. DNS prefetch and preconnect to accelerate student portal navigation
+      var domains = ['https://one.sti.edu', 'https://elms.sti.edu', 'https://sts.sti.edu', 'https://login.microsoftonline.com'];
+      domains.forEach(function(d) {
+        try {
+          var l1 = document.createElement('link');
+          l1.rel = 'preconnect';
+          l1.href = d;
+          var l2 = document.createElement('link');
+          l2.rel = 'dns-prefetch';
+          l2.href = d;
+          (document.head || document.documentElement).appendChild(l1);
+          (document.head || document.documentElement).appendChild(l2);
+        } catch(_) {}
+      });
     } catch(e) {}
   })();
 """
@@ -210,7 +252,9 @@ class MainActivity : ComponentActivity() {
   companion object {
     init {
       try {
-        android.system.Os.setenv("MESA_LOG_LEVEL", "silent", true)
+        android.system.Os.setenv("MESA_NO_ERROR", "1", true)
+        android.system.Os.setenv("MESA_DEBUG", "0", true)
+        android.system.Os.setenv("MESA_LOG_LEVEL", "fatal", true)
         android.system.Os.setenv("LIBGL_DRI3_DISABLE", "1", true)
         android.system.Os.setenv("EGL_LOG_LEVEL", "fatal", true)
       } catch (_: Throwable) {}
@@ -222,51 +266,32 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
+    // Instantly remove OS splash screen and start icon to direct to portal immediately
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      try {
+        splashScreen.setOnExitAnimationListener { splashScreenView ->
+          splashScreenView.remove()
+        }
+      } catch (_: Throwable) {}
+    }
+
     // Hardware acceleration at Window level for smoothness
     window.setFlags(
       android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
       android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
     )
 
-    // Enable high refresh rate (144Hz / 120Hz / 90Hz) safely on devices that support it
-    try {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        val display = display
-        val modes = display?.supportedModes ?: emptyArray()
-        val currentWidth = display?.mode?.physicalWidth ?: 0
-        val currentHeight = display?.mode?.physicalHeight ?: 0
+    // Solid black start background on window and decor view
+    window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
+    window.decorView.setBackgroundColor(android.graphics.Color.BLACK)
 
-        // Prioritize highest refresh rate mode (supports 90Hz, 120Hz, 144Hz, 165Hz)
-        val bestMode = modes
-          .filter { it.physicalWidth == currentWidth && it.physicalHeight == currentHeight }
-          .maxByOrNull { it.refreshRate }
-          ?: modes.maxByOrNull { it.refreshRate }
-
-        if (bestMode != null && bestMode.refreshRate > 60f) {
-          val attrs = window.attributes
-          attrs.preferredDisplayModeId = bestMode.modeId
-          attrs.preferredRefreshRate = bestMode.refreshRate
-          window.attributes = attrs
-        }
-      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        @Suppress("DEPRECATION")
-        val windowManager = getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
-        @Suppress("DEPRECATION")
-        val defaultDisplay = windowManager?.defaultDisplay
-        val modes = defaultDisplay?.supportedModes ?: emptyArray()
-        val maxMode = modes.maxByOrNull { it.refreshRate }
-        if (maxMode != null && maxMode.refreshRate > 60f) {
-          val attrs = window.attributes
-          attrs.preferredDisplayModeId = maxMode.modeId
-          attrs.preferredRefreshRate = maxMode.refreshRate
-          window.attributes = attrs
-        }
-      }
-    } catch (_: Throwable) {}
+    // Enforce 144Hz ultra-smooth display mode with zero delay
+    applyUltraFast144HzMode()
 
     SessionManager.initCookieManager(this)
     enableEdgeToEdge(
-      statusBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK)
+      statusBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK),
+      navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.BLACK)
     )
     try {
       WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
@@ -280,6 +305,58 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  /**
+   * Enforces 144Hz / 120Hz display refresh rate and zero touch latency
+   */
+  private fun applyUltraFast144HzMode() {
+    try {
+      val hasDrmRenderNode = try {
+        java.io.File("/dev/dri/renderD128").exists() || java.io.File("/dev/dri").exists()
+      } catch (_: Throwable) {
+        false
+      }
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val display = display
+        val modes = display?.supportedModes ?: emptyArray()
+        val currentWidth = display?.mode?.physicalWidth ?: 0
+        val currentHeight = display?.mode?.physicalHeight ?: 0
+
+        // Search specifically for 144Hz mode first, or highest available refresh rate (144Hz, 165Hz, 120Hz, 90Hz)
+        val mode144 = modes.firstOrNull { it.refreshRate in 143.5f..145.0f && (currentWidth == 0 || it.physicalWidth == currentWidth) }
+        val highestMode = modes
+          .filter { currentWidth == 0 || (it.physicalWidth == currentWidth && it.physicalHeight == currentHeight) }
+          .maxByOrNull { it.refreshRate }
+          ?: modes.maxByOrNull { it.refreshRate }
+
+        val targetMode = mode144 ?: highestMode
+        val targetRate = targetMode?.refreshRate ?: 144.0f
+
+        val attrs = window.attributes
+        if (hasDrmRenderNode && targetMode != null) {
+          attrs.preferredDisplayModeId = targetMode.modeId
+        }
+        attrs.preferredRefreshRate = targetRate.coerceAtLeast(144.0f)
+        window.attributes = attrs
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        @Suppress("DEPRECATION")
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+        @Suppress("DEPRECATION")
+        val defaultDisplay = windowManager?.defaultDisplay
+        val modes = defaultDisplay?.supportedModes ?: emptyArray()
+        val maxMode = modes.firstOrNull { it.refreshRate in 143.5f..145.0f } ?: modes.maxByOrNull { it.refreshRate }
+        if (maxMode != null) {
+          val attrs = window.attributes
+          if (hasDrmRenderNode) {
+            attrs.preferredDisplayModeId = maxMode.modeId
+          }
+          attrs.preferredRefreshRate = maxMode.refreshRate.coerceAtLeast(144.0f)
+          window.attributes = attrs
+        }
+      }
+    } catch (_: Throwable) {}
+  }
+
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
@@ -291,6 +368,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onResume() {
     super.onResume()
+    applyUltraFast144HzMode()
     SessionManager.restoreCookies(this)
     try {
       android.webkit.CookieManager.getInstance().flush()
@@ -500,7 +578,7 @@ fun PortalScreen(
 
   val animatedProgress by animateFloatAsState(
     targetValue = if (isLoading) loadProgress.coerceIn(0.08f, 1f) else 1f,
-    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+    animationSpec = tween(durationMillis = 60, easing = FastOutSlowInEasing),
     label = "load_progress_anim"
   )
 
@@ -525,6 +603,7 @@ fun PortalScreen(
         modifier = Modifier
           .fillMaxWidth()
           .weight(1f)
+          .background(Color.Black)
           .windowInsetsPadding(WindowInsets.navigationBars)
       ) {
         OneStiWebViewContainer(
@@ -888,13 +967,18 @@ fun OneStiWebViewContainer(
         // Inject StiSessionBridge to vault Web Storage tokens natively and ensure no account logs out
         addJavascriptInterface(com.example.bridge.StiSessionBridge(ctx), com.example.bridge.StiSessionBridge.BRIDGE_NAME)
 
-        // Clean white background for standard One STI portal
-        setBackgroundColor(android.graphics.Color.WHITE)
+        // Solid black start background to prevent white flashes upon app launch
+        setBackgroundColor(android.graphics.Color.BLACK)
 
-        // Ensure touch, click, and keyboard focus are explicitly active
+        // Ensure touch, click, and keyboard focus are explicitly active with zero latency
         isClickable = true
         isFocusable = true
         isFocusableInTouchMode = true
+        isHapticFeedbackEnabled = false
+        isNestedScrollingEnabled = false
+        isScrollContainer = true
+        overScrollMode = View.OVER_SCROLL_NEVER
+
         setOnTouchListener { v, event ->
           if (event.action == android.view.MotionEvent.ACTION_DOWN) {
             v.requestFocus()
@@ -902,12 +986,11 @@ fun OneStiWebViewContainer(
           false
         }
 
-        // Configure scroll bars and overscroll
+        // Configure scroll bars for clean, uncluttered 144Hz view
         isVerticalScrollBarEnabled = false
         isHorizontalScrollBarEnabled = false
-        overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
 
-        // WebSettings optimizations for fluid student portal browsing
+        // WebSettings optimizations for fluid 144fps student portal browsing
         settings.apply {
           javaScriptEnabled = true
           domStorageEnabled = true
@@ -924,9 +1007,12 @@ fun OneStiWebViewContainer(
           setSupportMultipleWindows(false)
           javaScriptCanOpenWindowsAutomatically = true
 
-          // Optimize layout and rendering pipeline for responsive student portal browsing
+          // Optimize layout and rendering pipeline for responsive 144fps student portal browsing
           mediaPlaybackRequiresUserGesture = false
-          offscreenPreRaster = true // Pre-renders out-of-viewport tiles for smooth scrolling
+          offscreenPreRaster = true // Pre-renders out-of-viewport tiles for smooth 144Hz scrolling
+          loadsImagesAutomatically = true
+          blockNetworkImage = false
+          defaultTextEncodingName = "UTF-8"
 
           // Optimize user agent string so Google/Microsoft OAuth does not reject with disallowed_useragent
           // and treats the session as a persistent browser rather than a transient in-app webview
@@ -1117,10 +1203,10 @@ fun OneStiWebViewContainer(
         )
         val primaryCol = android.graphics.Color.parseColor("#005596")
         val secondaryCol = android.graphics.Color.parseColor("#FFD100")
-        val bgCol = android.graphics.Color.WHITE
+        val bgCol = android.graphics.Color.parseColor("#1A1A1A")
         setColorSchemeColors(primaryCol, secondaryCol)
         setProgressBackgroundColorSchemeColor(bgCol)
-        setDistanceToTriggerSync(320)
+        setDistanceToTriggerSync(180)
 
         // Only allow pull-to-refresh if the WebView is at the top of the content without scroll conflicts
         setOnChildScrollUpCallback { _, _ ->
@@ -1140,7 +1226,7 @@ fun OneStiWebViewContainer(
       swipeRefresh.isRefreshing = isRefreshing
       val primaryCol = android.graphics.Color.parseColor("#005596")
       val secondaryCol = android.graphics.Color.parseColor("#FFD100")
-      val bgCol = android.graphics.Color.WHITE
+      val bgCol = android.graphics.Color.parseColor("#1A1A1A")
       swipeRefresh.setColorSchemeColors(primaryCol, secondaryCol)
       swipeRefresh.setProgressBackgroundColorSchemeColor(bgCol)
 
