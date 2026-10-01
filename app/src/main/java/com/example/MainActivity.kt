@@ -248,6 +248,15 @@ class MainActivity : ComponentActivity() {
   companion object {
     init {
       try {
+        val hasDrmRenderNode = try {
+          java.io.File("/dev/dri/renderD128").exists() || java.io.File("/dev/dri").exists()
+        } catch (_: Throwable) {
+          false
+        }
+        if (!hasDrmRenderNode) {
+          android.system.Os.setenv("LIBGL_ALWAYS_SOFTWARE", "true", true)
+          android.system.Os.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true)
+        }
         android.system.Os.setenv("MESA_NO_ERROR", "1", true)
         android.system.Os.setenv("MESA_DEBUG", "0", true)
         android.system.Os.setenv("MESA_LOG_LEVEL", "fatal", true)
@@ -302,7 +311,7 @@ class MainActivity : ComponentActivity() {
   }
 
   /**
-   * Enforces 144Hz / 120Hz display refresh rate and zero touch latency
+   * Enforces 144Hz / 120Hz display refresh rate and zero touch latency on devices with hardware DRM composer
    */
   private fun applyUltraFast144HzMode() {
     try {
@@ -310,6 +319,9 @@ class MainActivity : ComponentActivity() {
         java.io.File("/dev/dri/renderD128").exists() || java.io.File("/dev/dri").exists()
       } catch (_: Throwable) {
         false
+      }
+      if (!hasDrmRenderNode) {
+        return
       }
 
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

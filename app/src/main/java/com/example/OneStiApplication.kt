@@ -1,7 +1,9 @@
 package com.example
 
 import android.app.Application
+import android.content.Context
 import android.system.Os
+import java.io.File
 
 /**
  * Custom Application class for One STI.
@@ -16,6 +18,15 @@ class OneStiApplication : Application() {
 
     private fun configureGraphicsEnvironment() {
       try {
+        val hasDrmRenderNode = try {
+          File("/dev/dri/renderD128").exists() || File("/dev/dri").exists()
+        } catch (_: Throwable) {
+          false
+        }
+        if (!hasDrmRenderNode) {
+          Os.setenv("LIBGL_ALWAYS_SOFTWARE", "true", true)
+          Os.setenv("LIBGL_ALWAYS_SOFTWARE", "1", true)
+        }
         Os.setenv("MESA_NO_ERROR", "1", true)
         Os.setenv("MESA_DEBUG", "0", true)
         Os.setenv("MESA_LOG_LEVEL", "fatal", true)
@@ -25,6 +36,11 @@ class OneStiApplication : Application() {
         // Graceful fallback if Os.setenv is restricted
       }
     }
+  }
+
+  override fun attachBaseContext(base: Context?) {
+    configureGraphicsEnvironment()
+    super.attachBaseContext(base)
   }
 
   override fun onCreate() {
