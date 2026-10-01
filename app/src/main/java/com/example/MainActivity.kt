@@ -138,44 +138,40 @@ private const val ONE_STI_URL = "https://one.sti.edu/"
 
 private const val SMOOTH_SCROLL_JS = """
   (function() {
-    if (window.__sti_144fps_applied) return;
-    window.__sti_144fps_applied = true;
     try {
-      // 1. Force passive touch listeners for zero-delay 144fps touch dispatch without main thread blocking
-      var origAdd = EventTarget.prototype.addEventListener;
-      EventTarget.prototype.addEventListener = function(type, listener, options) {
-        if (type === 'touchstart' || type === 'touchmove' || type === 'wheel') {
-          if (typeof options === 'boolean') {
-            options = { capture: options, passive: true };
-          } else if (typeof options === 'object' && options !== null) {
-            if (options.passive === undefined) options.passive = true;
-          } else {
-            options = { passive: true };
-          }
-        }
-        return origAdd.call(this, type, listener, options);
-      };
+      // 1. Remove any previously injected broken styles
+      var old1 = document.getElementById('__sti_144fps_css');
+      if (old1) old1.remove();
+      var old2 = document.getElementById('__sti_smooth_css');
+      if (old2) old2.remove();
 
-      // 2. Hardware GPU composited CSS for instant touch response and 144Hz scrolling
+      // 2. Force passive touch listeners for zero-delay 144fps touch dispatch without main thread blocking
+      if (!window.__sti_passive_touch_hooked) {
+        window.__sti_passive_touch_hooked = true;
+        var origAdd = EventTarget.prototype.addEventListener;
+        EventTarget.prototype.addEventListener = function(type, listener, options) {
+          if (type === 'touchstart' || type === 'touchmove' || type === 'wheel') {
+            if (typeof options === 'boolean') {
+              options = { capture: options, passive: true };
+            } else if (typeof options === 'object' && options !== null) {
+              if (options.passive === undefined) options.passive = true;
+            } else {
+              options = { passive: true };
+            }
+          }
+          return origAdd.call(this, type, listener, options);
+        };
+      }
+
+      // 3. Safe tap optimization that preserves fixed header layout and viewport positioning
       var s = document.createElement('style');
       s.id = '__sti_144fps_css';
       s.textContent = 
         '* { -webkit-tap-highlight-color: transparent !important; } ' +
-        'html, body { ' +
-        '  -webkit-overflow-scrolling: touch !important; ' +
-        '  overscroll-behavior-y: contain !important; ' +
-        '  scroll-behavior: auto !important; ' +
-        '} ' +
-        'button, a, [role="button"], input, select, .btn, .card { ' +
-        '  touch-action: manipulation !important; ' +
-        '} ' +
-        '.page-content, main, .main-content, #content, .container, body, nav, header { ' +
-        '  transform: translateZ(0); ' +
-        '  backface-visibility: hidden; ' +
-        '}';
+        'button, a, [role="button"], input, select, .btn { touch-action: manipulation !important; }';
       (document.head || document.documentElement).appendChild(s);
 
-      // 3. DNS prefetch and preconnect to accelerate student portal navigation
+      // 4. DNS prefetch and preconnect to accelerate student portal navigation
       var domains = ['https://one.sti.edu', 'https://elms.sti.edu', 'https://sts.sti.edu', 'https://login.microsoftonline.com'];
       domains.forEach(function(d) {
         try {
